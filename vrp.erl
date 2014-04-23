@@ -42,6 +42,9 @@ main(Filename, Cars, InitPop) ->
                         {none, none}])
                  || I <- InitPopulation],
     create_tree(Processes),
+
+    io:format("initial population created~n"),
+
     [H|_] = Processes,
     H ! {selection, self()},
     receive
@@ -66,7 +69,8 @@ parse_bin(Bin) ->
     [string:strip(X) || X <- string:tokens(binary_to_list(Bin), "\r\n")].
 
 print_info(Parsed) ->
-    lists:map(fun(X) -> io:format("~s~n", [X]) end, lists:takewhile(fun(X) -> X /= "NODE_COORD_SECTION" end, Parsed)).
+    lists:map(fun(X) -> io:format("~s~n", [X]) end, lists:takewhile(fun(X) -> X /= "NODE_COORD_SECTION" end, Parsed)),
+    io:format("...~n").
 
 get_content(Parsed) ->
     [CapacityWhole|_] = lists:dropwhile(fun(X) -> string:substr(X, 1, length("CAPACITY")) /= "CAPACITY" end, Parsed),
@@ -158,7 +162,6 @@ individual(Pids, C = #chromosome{repr=X, isFitActual=false}, P, _) ->
     Fit = fitness(X, P),
     individual(Pids, C#chromosome{isFitActual=true, fit=Fit}, P, {none, none});
 individual(Pids = {Left, Right, Root}, C = #chromosome{fit=Fit}, P, S = {RightSelected, LeftSelected}) ->
-    %io:format("~p fitness: ~p~n", [self(), Fit]),
     receive
         {left, NewLeft} ->
             individual({NewLeft, Right, Root}, C, P, S);
@@ -233,17 +236,17 @@ select_best_worst({B1, W1}, {B2, W2}) ->
 
 create_tree([]) ->
     erlang:error(no_processes);
-create_tree(Processes) ->
-    create_tree(Processes, Processes, 1).
+create_tree(Processes=[_|Rest]) ->
+    create_tree(Processes, Rest).
 
-create_tree([], _, _) ->
+create_tree([], _) ->
     ok;
-create_tree(_, All, I) when length(All) < 2*I ->
+create_tree(_, []) ->
     ok;
-create_tree([H|_], All, I) when length(All) == 2*I ->
-    H ! {left, lists:nth(2*I, All)},
+create_tree([H|_], [L]) ->
+    H ! {left, L},
     ok;
-create_tree([H|Remaining], All, I) ->
-    H ! {left, lists:nth(2*I, All)},
-    H ! {right, lists:nth(2*I+1, All)},
-    create_tree(Remaining, All, I+1).
+create_tree([H | T], [L, R | Rest]) ->
+    H ! {left, L},
+    H ! {right, R},
+    create_tree(T, Rest).
