@@ -1,16 +1,24 @@
 -module(vrp).
--export([main/1]).
+-export([main/1, main/2]).
 
 main([FilenameArg, CarNumArg]) ->
     Filename = atom_to_list(FilenameArg),
     Cars = list_to_integer(atom_to_list(CarNumArg)),
+    main(Filename, Cars),
+    init:stop();
+main(_) ->
+    io:format("ERROR: You must run this program with two arguments,~n"),
+    io:format("- first is name of the file with VCRP task,~n"),
+    io:format("- second is number of cars to use.~n"),
+    init:stop().
+
+main(Filename, Cars) ->
     {ok, Bin} = file:read_file(Filename),
     Parsed = parse_bin(Bin),
     print_info(Parsed),
     {Capacity, Nodes, Depot} = get_content(Parsed),
     DistanceMap = compute_distance_map(Nodes),
-    io:format("~f~n", [fitness([[2,3,4], [5,6,7], [8,9,10], [11, 12, 13], [14, 15, 16]], Nodes, DistanceMap, Depot, Capacity)]),
-    init:stop().
+    io:format("~f~n", [fitness([lists:seq(2,32)], Nodes, DistanceMap, Depot, Capacity)]).
 
 parse_bin(Bin) ->
     [string:strip(X) || X <- string:tokens(binary_to_list(Bin), "\r\n")].
@@ -47,6 +55,7 @@ fitness(_, _, _, _, _) ->
 
 fitness([], _, _, _, _, Cost, OverCapacity) when OverCapacity > 0 ->
     Cost+1000*OverCapacity; % TODO: koeficient prekroceni kapacity
+    %Cost;
 fitness([], _, _, _, _, Cost, _) ->
     Cost;
 fitness([H|T], Nodes, DistanceMap, Depot, Capacity, Cost, OverCapacity) ->
