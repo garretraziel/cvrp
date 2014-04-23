@@ -170,8 +170,10 @@ individual(Pids = {Left, Right, Root}, C = #chromosome{fit=Fit}, P, S = {RightSe
             end;
         {selected, Left, Best, Worst} ->
             if
+                Right == none ->
+                    todo;
                 RightSelected /= none ->
-                    {Greatest, Lowest} = select_from_three(RightSelected, LeftSelected, {{}, {}}),
+                    {Greatest, Lowest} = select_from_three(RightSelected, {Best, Worst}, {{}, {}}),
                     Root ! {selected, self(), Greatest, Lowest},
                     individual(Pids, C, P, {none, none});
                 true ->
@@ -179,8 +181,12 @@ individual(Pids = {Left, Right, Root}, C = #chromosome{fit=Fit}, P, S = {RightSe
             end;
         {selected, Right, Best, Worst} ->
             if
+                Left == none ->
+                    todo;
                 LeftSelected /= none ->
-                    a;
+                    {Greatest, Lowest} = select_from_three({Best, Worst}, LeftSelected, {{}, {}}),
+                    Root ! {selected, self(), Greatest, Lowest},
+                    individual(Pids, C, P, {none, none});
                 true ->
                     individual(Pids, C, P, {{Best, Worst}, LeftSelected})
             end;
