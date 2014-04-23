@@ -1,5 +1,6 @@
 -module(vrp).
--export([main/1, main/3, individual/4]).
+%-export([main/1, main/3, individual/4]).
+-compile(export_all).
 
 -record(chromosome, {repr,
                      fit,
@@ -48,8 +49,18 @@ main(Filename, Cars, InitPop) ->
             io:format("~p ~p~n", [SelectedBest, SelectedWorst])
     end,
 
+    {_, BestPid} = SelectedBest,
+
+    BestPid ! {repr, self()},
+
+    BestSolution = receive
+        Data ->
+            Data
+    end,
+
     [Pid ! die || Pid <- Processes],
-    unregister(main).
+    unregister(main),
+    {BestSolution, VRP}.
     
 parse_bin(Bin) ->
     [string:strip(X) || X <- string:tokens(binary_to_list(Bin), "\r\n")].
@@ -79,7 +90,7 @@ compute_distance_map(Nodes) ->
     [{{A, B}, math:sqrt((X1-X2)*(X1-X2) + (Y1-Y2)*(Y1-Y2))} || {A, {X1, Y1, _}} <- Nodes, {B, {X2, Y2, _}} <- Nodes].
 
 % chromozom vypada jako: [[], [], [], [], []]
-fitness(Chromosome, #vrpProblem={nodes=Nodes, distancemap=DistanceMap,
+fitness(Chromosome, #vrpProblem{nodes=Nodes, distancemap=DistanceMap,
                                  depot=Depot, capacity=Capacity})
   when length(Chromosome) > 0 ->
     fitness(Chromosome, Nodes, DistanceMap, Depot, Capacity, 0, 0);
@@ -87,8 +98,8 @@ fitness(_, _) ->
     erlang:error(bad_chromosome).
 
 fitness([], _, _, _, _, Cost, OverCapacity) when OverCapacity > 0 ->
-    %Cost+1000*OverCapacity; % TODO: koeficient prekroceni kapacity
-    Cost;
+    Cost+1000*OverCapacity; % TODO: koeficient prekroceni kapacity
+    %Cost;
 fitness([], _, _, _, _, Cost, _) ->
     Cost;
 fitness([H|T], Nodes, DistanceMap, Depot, Capacity, Cost, OverCapacity) ->
@@ -147,6 +158,7 @@ individual(Pids, C = #chromosome{repr=X, isFitActual=false}, P, _) ->
     Fit = fitness(X, P),
     individual(Pids, C#chromosome{isFitActual=true, fit=Fit}, P, {none, none});
 individual(Pids = {Left, Right, Root}, C = #chromosome{fit=Fit}, P, S = {RightSelected, LeftSelected}) ->
+    %io:format("~p fitness: ~p~n", [self(), Fit]),
     receive
         {left, NewLeft} ->
             individual({NewLeft, Right, Root}, C, P, S);
@@ -171,9 +183,11 @@ individual(Pids = {Left, Right, Root}, C = #chromosome{fit=Fit}, P, S = {RightSe
         {selected, Left, Best, Worst} ->
             if
                 Right == none ->
-                    todo;
+                    {Greatest, Lowest} = select_best_worst({Best, Worst}, {{Fit, self()}, {Fit, self()}}),
+                    Root ! {selected, self(), Greatest, Lowest},
+                    individual(Pids, C, P, {none, none});
                 RightSelected /= none ->
-                    {Greatest, Lowest} = select_from_three(RightSelected, {Best, Worst}, {{}, {}}),
+                    {Greatest, Lowest} = select_best_worst(RightSelected, {Best, Worst}, {{Fit, self()}, {Fit, self()}}),
                     Root ! {selected, self(), Greatest, Lowest},
                     individual(Pids, C, P, {none, none});
                 true ->
@@ -182,19 +196,40 @@ individual(Pids = {Left, Right, Root}, C = #chromosome{fit=Fit}, P, S = {RightSe
         {selected, Right, Best, Worst} ->
             if
                 Left == none ->
-                    todo;
+                    {Greatest, Lowest} = select_best_worst({Best, Worst}, {{Fit, self()}, {Fit, self()}}),
+                    Root ! {selected, self(), Greatest, Lowest},
+                    individual(Pids, C, P, {none, none});
                 LeftSelected /= none ->
-                    {Greatest, Lowest} = select_from_three({Best, Worst}, LeftSelected, {{}, {}}),
+                    {Greatest, Lowest} = select_best_worst({Best, Worst}, LeftSelected, {{Fit, self()}, {Fit, self()}}),
                     Root ! {selected, self(), Greatest, Lowest},
                     individual(Pids, C, P, {none, none});
                 true ->
                     individual(Pids, C, P, {{Best, Worst}, LeftSelected})
             end;
+        {repr, Pid} ->
+            Pid ! C#chromosome.repr,
+            individual(Pids, C, P, S);
         die ->
             true
     end.
 
-lowest_of_three(
+select_best_worst({B1, W1}, {B2, W2}, {B3, W3}) ->
+    [B|_] = lists:sort([B1, B2, B3]),
+    [_,_,W] = lists:sort([W1, W2, W3]),
+    {B, W}.
+
+select_best_worst({B1, W1}, {B2, W2}) ->
+    B = if B1 < B2 ->
+                B1;
+           true ->
+                B2
+        end,
+    W = if W1 > W2 ->
+                W1;
+           true ->
+                W2
+        end,
+    {B, W}.
 
 create_tree([]) ->
     erlang:error(no_processes);
@@ -203,9 +238,9 @@ create_tree(Processes) ->
 
 create_tree([], _, _) ->
     ok;
-create_tree([_|Remaining], _, I) when length(Remaining) < 2*I ->
+create_tree(_, All, I) when length(All) < 2*I ->
     ok;
-create_tree([H|Remaining], All, I) when length(Remaining) == 2*I ->
+create_tree([H|_], All, I) when length(All) == 2*I ->
     H ! {left, lists:nth(2*I, All)},
     ok;
 create_tree([H|Remaining], All, I) ->
