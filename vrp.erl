@@ -1,5 +1,5 @@
 -module(vrp).
-%-export([main/1, main/3, individual/4]).
+%% -export([main/1, main/3, individual/4]).
 -compile(export_all).
 
 -record(chromosome, {repr,
@@ -57,14 +57,14 @@ main(Filename, Cars, InitPop) ->
     BestPid ! {repr, self()},
 
     BestSolution = receive
-        Data ->
-            Data
-    end,
+                       Data ->
+                           Data
+                   end,
 
     [Pid ! die || Pid <- Processes],
     unregister(main),
     {BestSolution, VRP}.
-    
+
 parse_bin(Bin) ->
     [string:strip(X) || X <- string:tokens(binary_to_list(Bin), "\r\n")].
 
@@ -85,7 +85,7 @@ get_content(Parsed) ->
 
     NodesList = [lists:map(fun(X) -> {I, _} = string:to_integer(X), I end, string:tokens(Node, " ")) || Node <- NodesStr],
     Nodes = lists:map(fun(X) -> {I, A, B} = list_to_tuple(X), {I, {A, B, proplists:get_value(I, DemandsMap)}} end, NodesList),
-    
+
     {Depot, _} = string:to_integer(DepotStr),
 
     {Capacity, Nodes, Depot}.
@@ -93,9 +93,9 @@ get_content(Parsed) ->
 compute_distance_map(Nodes) ->
     [{{A, B}, math:sqrt((X1-X2)*(X1-X2) + (Y1-Y2)*(Y1-Y2))} || {A, {X1, Y1, _}} <- Nodes, {B, {X2, Y2, _}} <- Nodes].
 
-% chromozom vypada jako: [[], [], [], [], []]
+%% chromozom vypada jako: [[], [], [], [], []]
 fitness(Chromosome, #vrpProblem{nodes=Nodes, distancemap=DistanceMap,
-                                 depot=Depot, capacity=Capacity})
+                                depot=Depot, capacity=Capacity})
   when length(Chromosome) > 0 ->
     fitness(Chromosome, Nodes, DistanceMap, Depot, Capacity, 0, 0);
 fitness(_, _) ->
@@ -103,7 +103,7 @@ fitness(_, _) ->
 
 fitness([], _, _, _, _, Cost, OverCapacity) when OverCapacity > 0 ->
     Cost+1000*OverCapacity; % TODO: koeficient prekroceni kapacity
-    %Cost;
+%% Cost;
 fitness([], _, _, _, _, Cost, _) ->
     Cost;
 fitness([H|T], Nodes, DistanceMap, Depot, Capacity, Cost, OverCapacity) ->
@@ -136,7 +136,7 @@ create_init_population(0, _, _, List) ->
     List;
 create_init_population(Count, CarCount, Nodes, List) ->
     Shuffled = shuffle(Nodes),
-    % TODO: jak moc v pocatecni populaci priradit jednomu autu?
+    %% TODO: jak moc v pocatecni populaci priradit jednomu autu?
     Segments = [random:uniform(round(2*length(Nodes)/CarCount)) || _ <- lists:seq(1, CarCount)],
     Cutted = cut_list(Shuffled, Segments),
     create_init_population(Count-1, CarCount, Nodes, [Cutted|List]).
