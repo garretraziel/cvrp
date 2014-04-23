@@ -1,5 +1,5 @@
 -module(vrp).
--export([main/1, main/3, individual/3]).
+-export([main/1, main/3, individual/4]).
 
 -record(chromosome, {repr,
                      fit,
@@ -34,13 +34,18 @@ main(Filename, Cars, InitPop) ->
 
     register(main, self()),
 
-    Processes = [spawn(?MODULE, individual, [self(), #chromosome{repr=I, isFitActual=false, fit=0}, VRP]) || I <- InitPopulation],
-    create_ring(self(), Processes),
+    Processes = [spawn(?MODULE, individual,
+                       [{none, none, none},
+                        #chromosome{repr=I, isFitActual=false, fit=0},
+                        VRP,
+                        {none, none}])
+                 || I <- InitPopulation],
+    create_tree(Processes),
     [H|_] = Processes,
-    H ! {selection, []},
+    H ! {selection, self()},
     receive
-        {selection, Selected} ->
-            io:format("~p~n", [Selected])
+        {selected, _, SelectedBest, SelectedWorst} ->
+            io:format("~p ~p~n", [SelectedBest, SelectedWorst])
     end,
 
     [Pid ! die || Pid <- Processes],
@@ -74,14 +79,16 @@ compute_distance_map(Nodes) ->
     [{{A, B}, math:sqrt((X1-X2)*(X1-X2) + (Y1-Y2)*(Y1-Y2))} || {A, {X1, Y1, _}} <- Nodes, {B, {X2, Y2, _}} <- Nodes].
 
 % chromozom vypada jako: [[], [], [], [], []]
-fitness(Chromosome, Nodes, DistanceMap, Depot, Capacity) when length(Chromosome) > 0 ->
+fitness(Chromosome, #vrpProblem={nodes=Nodes, distancemap=DistanceMap,
+                                 depot=Depot, capacity=Capacity})
+  when length(Chromosome) > 0 ->
     fitness(Chromosome, Nodes, DistanceMap, Depot, Capacity, 0, 0);
-fitness(_, _, _, _, _) ->
+fitness(_, _) ->
     erlang:error(bad_chromosome).
 
 fitness([], _, _, _, _, Cost, OverCapacity) when OverCapacity > 0 ->
-    Cost+1000*OverCapacity; % TODO: koeficient prekroceni kapacity
-    %Cost;
+    %Cost+1000*OverCapacity; % TODO: koeficient prekroceni kapacity
+    Cost;
 fitness([], _, _, _, _, Cost, _) ->
     Cost;
 fitness([H|T], Nodes, DistanceMap, Depot, Capacity, Cost, OverCapacity) ->
@@ -96,7 +103,7 @@ fitness_dist([H|T], Nodes, DistanceMap) ->
 
 fitness_dist(H, [], Nodes, _, Cost, CapUsed) ->
     {_, _, Cap} = proplists:get_value(H, Nodes),
-    {Cost, CapUsed+Cap};
+    {round(Cost), CapUsed+Cap}; % TODO: asi neni potreba byt float() presny
 fitness_dist(Last, [H|T], Nodes, DistanceMap, Cost, CapUsed) ->
     {_, _, Cap} = proplists:get_value(Last, Nodes),
     Distance = proplists:get_value({Last, H}, DistanceMap),
@@ -136,37 +143,66 @@ cut_list(List, [H|T], Acc) ->
     {First, Others} = lists:split(H, List),
     cut_list(Others, T, [First|Acc]).
 
-individual(Pid, C = #chromosome{repr=X, isFitActual=false},
-           P = #vrpProblem{nodes=Nodes, distancemap=DistanceMap,
-                           depot=Depot, capacity=Capacity}) ->
-    Fit = fitness(X, Nodes,DistanceMap, Depot, Capacity),
-    individual(Pid, C#chromosome{isFitActual=true, fit=Fit}, P);
-individual(Pid, C = #chromosome{fit=Fit}, P) ->
+individual(Pids, C = #chromosome{repr=X, isFitActual=false}, P, _) ->
+    Fit = fitness(X, P),
+    individual(Pids, C#chromosome{isFitActual=true, fit=Fit}, P, {none, none});
+individual(Pids = {Left, Right, Root}, C = #chromosome{fit=Fit}, P, S = {RightSelected, LeftSelected}) ->
     receive
-        {to, NewPid} ->
-            individual(NewPid, C, P);
-        {selection, []} ->
-            Pid ! {selection, [{self(), Fit}]},
-            individual(Pid, C, P);
-        {selection, [{_, Best}]} when Fit > Best->
-            Pid ! {selection, [{self(), Fit}]},
-            individual(Pid, C, P);
-        {selection, M} ->
-            Pid ! {selection, M},
-            individual(Pid, C, P);
+        {left, NewLeft} ->
+            individual({NewLeft, Right, Root}, C, P, S);
+        {right, NewRight} ->
+            individual({Left, NewRight, Root}, C, P, S);
+        {selection, NewRoot} ->
+            case {Left, Right} of
+                {none, none} ->
+                    NewRoot ! {selected, self(), {Fit, self()}, {Fit, self()}},
+                    individual({Left, Right, NewRoot}, C, P, S);
+                {none, RightValue} ->
+                    RightValue ! {selection, self()},
+                    individual({Left, Right, NewRoot}, C, P, S);
+                {LeftValue, none} ->
+                    LeftValue ! {selection, self()},
+                    individual({Left, Right, NewRoot}, C, P, S);
+                {LeftValue, RightValue} ->
+                    RightValue ! {selection, self()},
+                    LeftValue ! {selection, self()},
+                    individual({Left, Right, NewRoot}, C, P, S)
+            end;
+        {selected, Left, Best, Worst} ->
+            if
+                RightSelected /= none ->
+                    {Greatest, Lowest} = select_from_three(RightSelected, LeftSelected, {{}, {}}),
+                    Root ! {selected, self(), Greatest, Lowest},
+                    individual(Pids, C, P, {none, none});
+                true ->
+                    individual(Pids, C, P, {RightSelected, {Best, Worst}})
+            end;
+        {selected, Right, Best, Worst} ->
+            if
+                LeftSelected /= none ->
+                    a;
+                true ->
+                    individual(Pids, C, P, {{Best, Worst}, LeftSelected})
+            end;
         die ->
             true
     end.
 
-create_ring(_, []) ->
-    erlang:error(no_processes);
-create_ring(_, [_]) ->
-    erlang:error(too_few_processes);
-create_ring(MasterPid, [H|T]) ->
-    create_ring(MasterPid, T, H).
+lowest_of_three(
 
-create_ring(MasterPid, [], Last) ->
-    Last ! {to, MasterPid};
-create_ring(MasterPid, [H|T], Last) ->
-    Last ! {to, H},
-    create_ring(MasterPid, T, H).
+create_tree([]) ->
+    erlang:error(no_processes);
+create_tree(Processes) ->
+    create_tree(Processes, Processes, 1).
+
+create_tree([], _, _) ->
+    ok;
+create_tree([_|Remaining], _, I) when length(Remaining) < 2*I ->
+    ok;
+create_tree([H|Remaining], All, I) when length(Remaining) == 2*I ->
+    H ! {left, lists:nth(2*I, All)},
+    ok;
+create_tree([H|Remaining], All, I) ->
+    H ! {left, lists:nth(2*I, All)},
+    H ! {right, lists:nth(2*I+1, All)},
+    create_tree(Remaining, All, I+1).
