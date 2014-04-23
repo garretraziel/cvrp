@@ -57,6 +57,7 @@ main(Filename, Cars, InitPop, OverCapCoef) ->
     end,
 
     {_, BestPid} = SelectedBest,
+    {_, WorstPid} = SelectedWorst,
 
     BestPid ! {repr, self()},
 
@@ -65,9 +66,18 @@ main(Filename, Cars, InitPop, OverCapCoef) ->
                            Data
                    end,
 
+    WorstPid ! {reprChange, BestSolution},
+
+    H ! {selection, self()},
+    receive
+        {selected, _, SelectedNewBest, SelectedNewWorst} ->
+            io:format("~p ~p~n", [SelectedNewBest, SelectedNewWorst])
+    end,
+
     [Pid ! die || Pid <- Processes],
     unregister(main),
-    {BestSolution, VRP}.
+    %% {BestSolution, VRP}.
+    ok.
 
 parse_bin(Bin) ->
     [string:strip(X) || X <- string:tokens(binary_to_list(Bin), "\r\n")].
@@ -217,6 +227,8 @@ individual(Pids = {Left, Right, Root}, C = #chromosome{fit=Fit}, P, S = {RightSe
         {repr, Pid} ->
             Pid ! C#chromosome.repr,
             individual(Pids, C, P, S);
+        {reprChange, NewRepr} ->
+            individual(Pids, C#chromosome{repr=NewRepr, isFitActual=false}, P, S);
         die ->
             true
     end.
