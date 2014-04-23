@@ -9,28 +9,32 @@
 -record(vrpProblem, {nodes,
                      distancemap,
                      depot,
-                     capacity}).
+                     capacity,
+                     overcapcoef}).
 
-main([FilenameArg, CarNumArg, InitPopArg]) ->
+main([FilenameArg, CarNumArg, InitPopArg, OverCapCoefArg]) ->
     Filename = atom_to_list(FilenameArg),
     Cars = list_to_integer(atom_to_list(CarNumArg)),
     InitPop = list_to_integer(atom_to_list(InitPopArg)),
-    main(Filename, Cars, InitPop),
+    OverCapCoef = list_to_integer(atom_to_list(OverCapCoefArg)),
+    main(Filename, Cars, InitPop, OverCapCoef),
     init:stop();
 main(_) ->
-    io:format("ERROR: You must run this program with three arguments,~n"),
+    io:format("ERROR: You must run this program with four arguments,~n"),
     io:format("- first is the name of the file with VCRP task,~n"),
     io:format("- second is the number of cars to use,~n"),
-    io:format("- third is the number of individuals in init population .~n"),
+    io:format("- third is the number of individuals in init population,~n"),
+    io:format("- fourth is coefficient of over-capacity penalty.~n"),
     init:stop().
 
-main(Filename, Cars, InitPop) ->
+main(Filename, Cars, InitPop, OverCapCoef) ->
     {ok, Bin} = file:read_file(Filename),
     Parsed = parse_bin(Bin),
     print_info(Parsed),
     {Capacity, Nodes, Depot} = get_content(Parsed),
     DistanceMap = compute_distance_map(Nodes),
-    VRP = #vrpProblem{nodes=Nodes, distancemap=DistanceMap, depot=Depot, capacity=Capacity},
+    VRP = #vrpProblem{nodes=Nodes, distancemap=DistanceMap,
+                      depot=Depot, capacity=Capacity, overcapcoef=OverCapCoef},
     InitPopulation = create_init_population(InitPop, Cars, lists:delete(Depot, proplists:get_keys(Nodes))),
 
     register(main, self()),
@@ -81,9 +85,11 @@ get_content(Parsed) ->
     {NodesStr, [_|Rest]} = lists:splitwith(fun(X) -> X /= "DEMAND_SECTION" end, Data),
     {DemandsStr, [_,DepotStr|_]} = lists:splitwith(fun(X) -> X /= "DEPOT_SECTION" end, Rest),
 
-    DemandsMap = [list_to_tuple(lists:map(fun(X) -> {I, _} = string:to_integer(X), I end, string:tokens(Node, " "))) || Node <- DemandsStr],
+    DemandsMap = [list_to_tuple(lists:map(fun(X) -> {I, _} = string:to_integer(X), I end, string:tokens(Node, " ")))
+                  || Node <- DemandsStr],
 
-    NodesList = [lists:map(fun(X) -> {I, _} = string:to_integer(X), I end, string:tokens(Node, " ")) || Node <- NodesStr],
+    NodesList = [lists:map(fun(X) -> {I, _} = string:to_integer(X), I end, string:tokens(Node, " "))
+                 || Node <- NodesStr],
     Nodes = lists:map(fun(X) -> {I, A, B} = list_to_tuple(X), {I, {A, B, proplists:get_value(I, DemandsMap)}} end, NodesList),
 
     {Depot, _} = string:to_integer(DepotStr),
@@ -95,21 +101,20 @@ compute_distance_map(Nodes) ->
 
 %% chromozom vypada jako: [[], [], [], [], []]
 fitness(Chromosome, #vrpProblem{nodes=Nodes, distancemap=DistanceMap,
-                                depot=Depot, capacity=Capacity})
+                                depot=Depot, capacity=Capacity, overcapcoef=CapCoef})
   when length(Chromosome) > 0 ->
-    fitness(Chromosome, Nodes, DistanceMap, Depot, Capacity, 0, 0);
+    fitness(Chromosome, Nodes, DistanceMap, Depot, Capacity, CapCoef, 0, 0);
 fitness(_, _) ->
     erlang:error(bad_chromosome).
 
-fitness([], _, _, _, _, Cost, OverCapacity) when OverCapacity > 0 ->
-    Cost+1000*OverCapacity; % TODO: koeficient prekroceni kapacity
-%% Cost;
-fitness([], _, _, _, _, Cost, _) ->
+fitness([], _, _, _, _, CapCoef, Cost, OverCapacity) when OverCapacity > 0 ->
+    Cost+CapCoef*OverCapacity; % TODO: koeficient prekroceni kapacity
+fitness([], _, _, _, _, _, Cost, _) ->
     Cost;
-fitness([H|T], Nodes, DistanceMap, Depot, Capacity, Cost, OverCapacity) ->
+fitness([H|T], Nodes, DistanceMap, Depot, Capacity, CapCoef, Cost, OverCapacity) ->
     {ActualCost, ActualCap} = fitness_dist([Depot|H]++[Depot], Nodes, DistanceMap),
     ActualOverCap = if ActualCap > Capacity -> (ActualCap - Capacity); true -> 0 end,
-    fitness(T, Nodes, DistanceMap, Depot, Capacity, Cost+ActualCost, OverCapacity+ActualOverCap).
+    fitness(T, Nodes, DistanceMap, Depot, Capacity, CapCoef, Cost+ActualCost, OverCapacity+ActualOverCap).
 
 fitness_dist([], _, _) ->
     {0, 0};
