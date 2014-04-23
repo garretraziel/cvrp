@@ -1,5 +1,14 @@
 -module(vrp).
--export([main/1, main/3]).
+-export([main/1, main/3, individual/2]).
+
+-record(chromosome, {repr,
+                     fit,
+                     isFitActual}).
+
+-record(vrpProblem, {nodes,
+                     distancemap,
+                     depot,
+                     capacity}).
 
 main([FilenameArg, CarNumArg, InitPopArg]) ->
     Filename = atom_to_list(FilenameArg),
@@ -20,8 +29,12 @@ main(Filename, Cars, InitPop) ->
     print_info(Parsed),
     {Capacity, Nodes, Depot} = get_content(Parsed),
     DistanceMap = compute_distance_map(Nodes),
+    VRP = #vrpProblem{nodes=Nodes, distancemap=DistanceMap, depot=Depot, capacity=Capacity},
     InitPopulation = create_init_population(InitPop, Cars, lists:delete(Depot, proplists:get_keys(Nodes))),
-    io:format("~p~n", [lists:min(lists:map(fun(X) -> fitness(X, Nodes, DistanceMap, Depot, Capacity) end, InitPopulation))]).
+
+    register(main, self()),
+
+    Processes = [spawn(?MODULE, individual, [#chromosome{repr=I, isFitActual=false, fit=0}, VRP]) || I <- InitPopulation].
     
 parse_bin(Bin) ->
     [string:strip(X) || X <- string:tokens(binary_to_list(Bin), "\r\n")].
@@ -112,3 +125,9 @@ cut_list(List, [H|T], Acc) when H > length(List) ->
 cut_list(List, [H|T], Acc) ->
     {First, Others} = lists:split(H, List),
     cut_list(Others, T, [First|Acc]).
+
+individual(C = #chromosome{repr=X, isFitActual=false},
+           P = #vrpProblem{nodes=Nodes, distancemap=DistanceMap, depot=Depot, capacity=Capacity}) ->
+    individual(C#chromosome{isFitActual=true, fit=fitness(X, Nodes,DistanceMap, Depot, Capacity)}, P);
+individual(C = #chromosome{fit=Fit}, P) ->
+    io:format("~p~n", [Fit]).
