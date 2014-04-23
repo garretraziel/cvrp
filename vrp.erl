@@ -1,5 +1,5 @@
 -module(vrp).
--export([main/1, main/3, individual/2]).
+-export([main/1, main/3, individual/3]).
 
 -record(chromosome, {repr,
                      fit,
@@ -34,7 +34,17 @@ main(Filename, Cars, InitPop) ->
 
     register(main, self()),
 
-    Processes = [spawn(?MODULE, individual, [#chromosome{repr=I, isFitActual=false, fit=0}, VRP]) || I <- InitPopulation].
+    Processes = [spawn(?MODULE, individual, [self(), #chromosome{repr=I, isFitActual=false, fit=0}, VRP]) || I <- InitPopulation],
+    create_ring(self(), Processes),
+    [H|_] = Processes,
+    H ! {selection, []},
+    receive
+        {selection, Selected} ->
+            io:format("~p~n", [Selected])
+    end,
+
+    [Pid ! die || Pid <- Processes],
+    unregister(main).
     
 parse_bin(Bin) ->
     [string:strip(X) || X <- string:tokens(binary_to_list(Bin), "\r\n")].
@@ -105,7 +115,7 @@ create_init_population(0, _, _, List) ->
 create_init_population(Count, CarCount, Nodes, List) ->
     Shuffled = shuffle(Nodes),
     % TODO: jak moc v pocatecni populaci priradit jednomu autu?
-    Segments = [random:uniform(round(2*(length(Nodes)/CarCount))) || _ <- lists:seq(1, CarCount)],
+    Segments = [random:uniform(round(2*length(Nodes)/CarCount)) || _ <- lists:seq(1, CarCount)],
     Cutted = cut_list(Shuffled, Segments),
     create_init_population(Count-1, CarCount, Nodes, [Cutted|List]).
 
@@ -126,8 +136,37 @@ cut_list(List, [H|T], Acc) ->
     {First, Others} = lists:split(H, List),
     cut_list(Others, T, [First|Acc]).
 
-individual(C = #chromosome{repr=X, isFitActual=false},
-           P = #vrpProblem{nodes=Nodes, distancemap=DistanceMap, depot=Depot, capacity=Capacity}) ->
-    individual(C#chromosome{isFitActual=true, fit=fitness(X, Nodes,DistanceMap, Depot, Capacity)}, P);
-individual(C = #chromosome{fit=Fit}, P) ->
-    io:format("~p~n", [Fit]).
+individual(Pid, C = #chromosome{repr=X, isFitActual=false},
+           P = #vrpProblem{nodes=Nodes, distancemap=DistanceMap,
+                           depot=Depot, capacity=Capacity}) ->
+    Fit = fitness(X, Nodes,DistanceMap, Depot, Capacity),
+    individual(Pid, C#chromosome{isFitActual=true, fit=Fit}, P);
+individual(Pid, C = #chromosome{fit=Fit}, P) ->
+    receive
+        {to, NewPid} ->
+            individual(NewPid, C, P);
+        {selection, []} ->
+            Pid ! {selection, [{self(), Fit}]},
+            individual(Pid, C, P);
+        {selection, [{_, Best}]} when Fit > Best->
+            Pid ! {selection, [{self(), Fit}]},
+            individual(Pid, C, P);
+        {selection, M} ->
+            Pid ! {selection, M},
+            individual(Pid, C, P);
+        die ->
+            true
+    end.
+
+create_ring(_, []) ->
+    erlang:error(no_processes);
+create_ring(_, [_]) ->
+    erlang:error(too_few_processes);
+create_ring(MasterPid, [H|T]) ->
+    create_ring(MasterPid, T, H).
+
+create_ring(MasterPid, [], Last) ->
+    Last ! {to, MasterPid};
+create_ring(MasterPid, [H|T], Last) ->
+    Last ! {to, H},
+    create_ring(MasterPid, T, H).
