@@ -52,26 +52,8 @@ main(Filename, Cars, InitPop, OverCapCoef) ->
     [H|_] = Processes,
     H ! {selection, self()},
     receive
-        {selected, _, SelectedBest, SelectedWorst} ->
-            io:format("~p ~p~n", [SelectedBest, SelectedWorst])
-    end,
-
-    {_, BestPid} = SelectedBest,
-    {_, WorstPid} = SelectedWorst,
-
-    BestPid ! {repr, self()},
-
-    BestSolution = receive
-                       Data ->
-                           Data
-                   end,
-
-    WorstPid ! {reprChange, BestSolution},
-
-    H ! {selection, self()},
-    receive
-        {selected, _, SelectedNewBest, SelectedNewWorst} ->
-            io:format("~p ~p~n", [SelectedNewBest, SelectedNewWorst])
+        {selected, _, Sorted = [HSorted|_]} ->
+            io:format("~p ~p~n", [HSorted, length(Sorted)])
     end,
 
     [Pid ! die || Pid <- Processes],
@@ -100,7 +82,8 @@ get_content(Parsed) ->
 
     NodesList = [lists:map(fun(X) -> {I, _} = string:to_integer(X), I end, string:tokens(Node, " "))
                  || Node <- NodesStr],
-    Nodes = lists:map(fun(X) -> {I, A, B} = list_to_tuple(X), {I, {A, B, proplists:get_value(I, DemandsMap)}} end, NodesList),
+    Nodes = lists:map(fun(X) -> {I, A, B} = list_to_tuple(X), {_, Demand} = lists:keyfind(I, 1, DemandsMap),
+                                {I, {A, B, Demand}} end, NodesList),
 
     {Depot, _} = string:to_integer(DepotStr),
 
@@ -132,11 +115,11 @@ fitness_dist([H|T], Nodes, DistanceMap) ->
     fitness_dist(H, T, Nodes, DistanceMap, 0, 0).
 
 fitness_dist(H, [], Nodes, _, Cost, CapUsed) ->
-    {_, _, Cap} = proplists:get_value(H, Nodes),
+    {_, {_, _, Cap}} = lists:keyfind(H, 1, Nodes),
     {round(Cost), CapUsed+Cap}; % TODO: asi neni potreba byt float() presny
 fitness_dist(Last, [H|T], Nodes, DistanceMap, Cost, CapUsed) ->
-    {_, _, Cap} = proplists:get_value(Last, Nodes),
-    Distance = proplists:get_value({Last, H}, DistanceMap),
+    {_, {_, _, Cap}} = lists:keyfind(Last, 1, Nodes),
+    {_, Distance} = lists:keyfind({Last, H}, 1, DistanceMap),
     fitness_dist(H, T, Nodes, DistanceMap, Cost+Distance, CapUsed+Cap).
 
 shuffle(List) ->
@@ -185,7 +168,7 @@ individual(Pids = {Left, Right, Root}, C = #chromosome{fit=Fit}, P, S = {RightSe
         {selection, NewRoot} ->
             case {Left, Right} of
                 {none, none} ->
-                    NewRoot ! {selected, self(), {Fit, self()}, {Fit, self()}},
+                    NewRoot ! {selected, self(), [{Fit, self()}]},
                     individual({Left, Right, NewRoot}, C, P, S);
                 {none, RightValue} ->
                     RightValue ! {selection, self()},
@@ -198,31 +181,33 @@ individual(Pids = {Left, Right, Root}, C = #chromosome{fit=Fit}, P, S = {RightSe
                     LeftValue ! {selection, self()},
                     individual({Left, Right, NewRoot}, C, P, S)
             end;
-        {selected, Left, Best, Worst} ->
+        {selected, Left, SortedList} ->
             if
                 Right == none ->
-                    {Greatest, Lowest} = select_best_worst({Best, Worst}, {{Fit, self()}, {Fit, self()}}),
-                    Root ! {selected, self(), Greatest, Lowest},
+                    Sorted = lists:keymerge(1, SortedList, [{Fit, self()}]),
+                    Root ! {selected, self(), Sorted},
                     individual(Pids, C, P, {none, none});
                 RightSelected /= none ->
-                    {Greatest, Lowest} = select_best_worst(RightSelected, {Best, Worst}, {{Fit, self()}, {Fit, self()}}),
-                    Root ! {selected, self(), Greatest, Lowest},
+                    First = lists:keymerge(1, RightSelected, [{Fit, self()}]),
+                    Sorted = lists:keymerge(1, SortedList, First),
+                    Root ! {selected, self(), Sorted},
                     individual(Pids, C, P, {none, none});
                 true ->
-                    individual(Pids, C, P, {RightSelected, {Best, Worst}})
+                    individual(Pids, C, P, {RightSelected, SortedList})
             end;
-        {selected, Right, Best, Worst} ->
+        {selected, Right, SortedList} ->
             if
                 Left == none ->
-                    {Greatest, Lowest} = select_best_worst({Best, Worst}, {{Fit, self()}, {Fit, self()}}),
-                    Root ! {selected, self(), Greatest, Lowest},
+                    Sorted = lists:keymerge(1, SortedList, [{Fit, self()}]),
+                    Root ! {selected, self(), Sorted},
                     individual(Pids, C, P, {none, none});
                 LeftSelected /= none ->
-                    {Greatest, Lowest} = select_best_worst({Best, Worst}, LeftSelected, {{Fit, self()}, {Fit, self()}}),
-                    Root ! {selected, self(), Greatest, Lowest},
+                    First = lists:keymerge(1, LeftSelected, [{Fit, self()}]),
+                    Sorted = lists:keymerge(1, SortedList, First),
+                    Root ! {selected, self(), Sorted},
                     individual(Pids, C, P, {none, none});
                 true ->
-                    individual(Pids, C, P, {{Best, Worst}, LeftSelected})
+                    individual(Pids, C, P, {SortedList, LeftSelected})
             end;
         {repr, Pid} ->
             Pid ! C#chromosome.repr,
@@ -232,24 +217,6 @@ individual(Pids = {Left, Right, Root}, C = #chromosome{fit=Fit}, P, S = {RightSe
         die ->
             true
     end.
-
-select_best_worst({B1, W1}, {B2, W2}, {B3, W3}) ->
-    [B|_] = lists:sort([B1, B2, B3]),
-    [_,_,W] = lists:sort([W1, W2, W3]),
-    {B, W}.
-
-select_best_worst({B1, W1}, {B2, W2}) ->
-    B = if B1 < B2 ->
-                B1;
-           true ->
-                B2
-        end,
-    W = if W1 > W2 ->
-                W1;
-           true ->
-                W2
-        end,
-    {B, W}.
 
 create_tree([]) ->
     erlang:error(no_processes);
@@ -267,3 +234,6 @@ create_tree([H | T], [L, R | Rest]) ->
     H ! {left, L},
     H ! {right, R},
     create_tree(T, Rest).
+
+crossover(ChromosomeA, ChromosomeB) ->
+    ok.
