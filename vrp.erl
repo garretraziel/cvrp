@@ -28,6 +28,9 @@ main(_) ->
     init:stop().
 
 main(Filename, Cars, InitPop, OverCapCoef) ->
+    {A, B, C} = erlang:now(),
+    random:seed(A, B, C),
+
     {ok, Bin} = file:read_file(Filename),
     Parsed = parse_bin(Bin),
     print_info(Parsed),
@@ -52,8 +55,16 @@ main(Filename, Cars, InitPop, OverCapCoef) ->
     [H|_] = Processes,
     H ! {selection, self()},
     receive
-        {selected, _, Sorted = [HSorted|_]} ->
-            io:format("~p ~p~n", [HSorted, length(Sorted)])
+        {selected, _, Sorted} ->
+            true
+    end,
+    PopLength = length(Sorted),
+
+    spawn(?MODULE, tournament_selector, [Sorted, self(), 5, PopLength]), % TODO: promenna misto "20"
+
+    receive
+        {X, Y} ->
+            io:format("~p ~p ~p ~p~n", [X, Y, fitness(X, VRP), fitness(Y, VRP)])
     end,
 
     [Pid ! die || Pid <- Processes],
@@ -218,6 +229,50 @@ individual(Pids = {Left, Right, Root}, C = #chromosome{fit=Fit}, P, S = {RightSe
             true
     end.
 
+tournament_selector(Individuals, Master, TournamentCount, Length) ->
+    {A, B, C} = erlang:now(),
+    random:seed(A, B, C),
+    tournament_selector(Individuals, Master, TournamentCount, Length, none, none).
+
+tournament_selector(_, _, 0, _, none, none) ->
+    erlang:error(bad_tournament_count);
+tournament_selector(Individuals, Master, 0, _, I, J) ->
+    io:format("~p ~p~n", [I, J]),
+    {_, PidA} = lists:nth(I, Individuals),
+    {_, PidB} = lists:nth(J, Individuals),
+    PidA ! {repr, self()},
+    PidB ! {repr, self()},
+    crosser(Master, none, none);
+tournament_selector(Individuals, Master, C, Length, I, J) ->
+    First = random:uniform(Length),
+    Second = random:uniform(Length),
+    io:format("~p ~p~n", [First, Second]),
+    MinI = if First < I ->
+                   First;
+              true ->
+                   I
+           end,
+    MinJ = if Second < J ->
+                   Second;
+              true ->
+                   J
+           end,
+    tournament_selector(Individuals, Master, C-1, Length, MinI, MinJ).
+
+crosser(Master, none, none) ->
+    receive
+        Repr ->
+            crosser(Master, Repr, none)
+    end;
+crosser(Master, RepA, none) ->
+    receive
+        Repr ->
+            crosser(Master, RepA, Repr)
+    end;
+crosser(Master, RepA, RepB) ->
+    Children = crossover(RepA, RepB),
+    Master ! Children.
+
 create_tree([]) ->
     erlang:error(no_processes);
 create_tree(Processes=[_|Rest]) ->
@@ -236,4 +291,4 @@ create_tree([H | T], [L, R | Rest]) ->
     create_tree(T, Rest).
 
 crossover(ChromosomeA, ChromosomeB) ->
-    ok.
+    {ChromosomeA, ChromosomeB}.
