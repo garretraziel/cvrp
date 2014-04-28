@@ -1,6 +1,6 @@
 -module(vrp).
-%% -export([main/1, main/3, individual/4]).
--compile(export_all).
+-export([main/1, main/5, individual/4, tournament_selector/4]).
+%% -compile(export_all).
 
 -record(chromosome, {repr,
                      fit,
@@ -10,26 +10,28 @@
                      distancemap,
                      depot,
                      capacity,
-                     overcapcoef}).
+                     overcapcoef,
+                     popcount}).
 
-main([FilenameArg, CarNumArg, InitPopArg, OverCapCoefArg]) ->
+main([FilenameArg, CarNumArg, PopCountArg, OverCapCoefArg, IterationsArg]) ->
     Filename = atom_to_list(FilenameArg),
     Cars = list_to_integer(atom_to_list(CarNumArg)),
-    InitPop = list_to_integer(atom_to_list(InitPopArg)),
+    PopCount = list_to_integer(atom_to_list(PopCountArg)),
     OverCapCoef = list_to_integer(atom_to_list(OverCapCoefArg)),
-    main(Filename, Cars, InitPop, OverCapCoef),
+    Iterations = list_to_integer(atom_to_list(IterationsArg)),
+    main(Filename, Cars, PopCount, OverCapCoef, Iterations),
     init:stop();
 main(_) ->
-    io:format("ERROR: You must run this program with four arguments,~n"),
+    io:format("ERROR: You must run this program with five arguments,~n"),
     io:format("- first is the name of the file with VCRP task,~n"),
     io:format("- second is the number of cars to use,~n"),
-    io:format("- third is the number of individuals in init population,~n"),
-    io:format("- fourth is coefficient of over-capacity penalty.~n"),
+    io:format("- third is the number of individuals in population,~n"),
+    io:format("- fourth is coefficient of over-capacity penalty,~n"),
+    io:format("- fifth is number of iterations.~n"),
     init:stop().
 
-main(Filename, Cars, InitPop, OverCapCoef) ->
-    {A, B, C} = erlang:now(),
-    random:seed(A, B, C),
+main(Filename, Cars, PopCount, OverCapCoef, Iterations) ->
+    random:seed(erlang:now()),
 
     {ok, Bin} = file:read_file(Filename),
     Parsed = parse_bin(Bin),
@@ -37,8 +39,9 @@ main(Filename, Cars, InitPop, OverCapCoef) ->
     {Capacity, Nodes, Depot} = get_content(Parsed),
     DistanceMap = compute_distance_map(Nodes),
     VRP = #vrpProblem{nodes=Nodes, distancemap=DistanceMap,
-                      depot=Depot, capacity=Capacity, overcapcoef=OverCapCoef},
-    InitPopulation = create_init_population(InitPop, Cars, lists:delete(Depot, proplists:get_keys(Nodes))),
+                      depot=Depot, capacity=Capacity, overcapcoef=OverCapCoef,
+                      popcount=PopCount},
+    InitPopulation = create_init_population(PopCount, Cars, lists:delete(Depot, proplists:get_keys(Nodes))),
 
     register(main, self()),
 
@@ -53,38 +56,43 @@ main(Filename, Cars, InitPop, OverCapCoef) ->
     io:format("initial population created~n"),
 
     [H|_] = Processes,
-    H ! {selection, self()},
-    receive
-        {selected, _, Sorted} ->
-            true
-    end,
 
-    io:format("Avg fitness: ~p~n", [average_fitness(Sorted)]),
-    io:format("Best: ~p~n", [hd(Sorted)]),
-
-    PopLength = length(Sorted),
-    SelectorLength = round(PopLength/3),
-
-    Selectors = [spawn(?MODULE, tournament_selector, [Sorted, self(), 10, PopLength])
-                 || _ <- lists:seq(1, SelectorLength)], % TODO: promenna misto "20"
-
-    Children = receive_children(SelectorLength),
-
-    replace_worst(Sorted, Children),
-
-    H ! {selection, self()},
-    receive
-        {selected, _, Sorted2} ->
-            true
-    end,
-
-    io:format("Avg fitness: ~p~n", [average_fitness(Sorted2)]),
-    io:format("Best: ~p~n", [hd(Sorted2)]),
+    generations_iterate(H, Iterations, VRP),
 
     [Pid ! die || Pid <- Processes],
     unregister(main),
     %% {BestSolution, VRP}.
     ok.
+
+generations_iterate(H, Count, VRP) ->
+    H ! {selection, self()},
+    receive
+        {selected, _, Sorted} ->
+            true
+    end,
+    generations_iterate(H, Count, VRP, 0, Sorted).
+
+generations_iterate(_, Total, _, Total, Acc) ->
+    hd(Acc);
+generations_iterate(H, Total, VRP = #vrpProblem{popcount=PopCount}, Count, Acc) ->
+    SelectorLength = round(PopCount/3),
+
+    [spawn(?MODULE, tournament_selector, [Acc, self(), 5, PopCount])
+     || _ <- lists:seq(1, SelectorLength)], % TODO: promenna misto "20"
+
+    Children = receive_children(SelectorLength),
+
+    replace_worst(Acc, Children),
+
+    H ! {selection, self()},
+    receive
+        {selected, _, NewValues} ->
+            true
+    end,
+
+    io:format("Avg fitness: ~p~n", [average_fitness(NewValues)]),
+    io:format("Best: ~p~n", [hd(NewValues)]),
+    generations_iterate(H, Total, VRP, Count+1, NewValues).
 
 receive_children(Count) ->
     receive_children(Count, 0, []).
@@ -266,8 +274,7 @@ individual(Pids = {Left, Right, Root}, C = #chromosome{fit=Fit}, P, S = {RightSe
     end.
 
 tournament_selector(Individuals, Master, TournamentCount, Length) ->
-    {A, B, C} = erlang:now(),
-    random:seed(A, B, C),
+    random:seed(erlang:now()),
     tournament_selector(Individuals, Master, TournamentCount, Length, none, none).
 
 tournament_selector(_, _, 0, _, none, none) ->
