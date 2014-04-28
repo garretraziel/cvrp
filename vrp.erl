@@ -58,19 +58,52 @@ main(Filename, Cars, InitPop, OverCapCoef) ->
         {selected, _, Sorted} ->
             true
     end,
+
+    io:format("Avg fitness: ~p~n", [average_fitness(Sorted)]),
+    io:format("Best: ~p~n", [hd(Sorted)]),
+
     PopLength = length(Sorted),
+    SelectorLength = round(PopLength/3),
 
-    spawn(?MODULE, tournament_selector, [Sorted, self(), 5, PopLength]), % TODO: promenna misto "20"
+    Selectors = [spawn(?MODULE, tournament_selector, [Sorted, self(), 10, PopLength])
+                 || _ <- lists:seq(1, SelectorLength)], % TODO: promenna misto "20"
 
+    Children = receive_children(SelectorLength),
+
+    replace_worst(Sorted, Children),
+
+    H ! {selection, self()},
     receive
-        {X, Y} ->
-            io:format("~p ~p ~p ~p~n", [X, Y, fitness(X, VRP), fitness(Y, VRP)])
+        {selected, _, Sorted2} ->
+            true
     end,
+
+    io:format("Avg fitness: ~p~n", [average_fitness(Sorted2)]),
+    io:format("Best: ~p~n", [hd(Sorted2)]),
 
     [Pid ! die || Pid <- Processes],
     unregister(main),
     %% {BestSolution, VRP}.
     ok.
+
+receive_children(Count) ->
+    receive_children(Count, 0, []).
+
+receive_children(Total, Total, Acc) ->
+    Acc;
+receive_children(Total, Count, Acc) ->
+    receive
+        {children, X, Y} ->
+            receive_children(Total, Count+1, [X, Y | Acc])
+    end.
+
+replace_worst([], []) ->
+    ok;
+replace_worst(Values = [_|T], Children) when length(Values) > length(Children) ->
+    replace_worst(T, Children);
+replace_worst([{_, Pid}|TV], [HC|TC]) ->
+    Pid ! {reprChange, HC},
+    replace_worst(TV, TC).
 
 parse_bin(Bin) ->
     [string:strip(X) || X <- string:tokens(binary_to_list(Bin), "\r\n")].
@@ -132,6 +165,9 @@ fitness_dist(Last, [H|T], Nodes, DistanceMap, Cost, CapUsed) ->
     {_, {_, _, Cap}} = lists:keyfind(Last, 1, Nodes),
     {_, Distance} = lists:keyfind({Last, H}, 1, DistanceMap),
     fitness_dist(H, T, Nodes, DistanceMap, Cost+Distance, CapUsed+Cap).
+
+average_fitness(Values) ->
+    lists:foldl(fun({V, _}, Acc) -> Acc + V end, 0, Values)/length(Values).
 
 shuffle(List) ->
     [X || {_, X} <- lists:sort([{random:uniform(), N} || N <- List])].
@@ -237,16 +273,14 @@ tournament_selector(Individuals, Master, TournamentCount, Length) ->
 tournament_selector(_, _, 0, _, none, none) ->
     erlang:error(bad_tournament_count);
 tournament_selector(Individuals, Master, 0, _, I, J) ->
-    io:format("~p ~p~n", [I, J]),
-    {_, PidA} = lists:nth(I, Individuals),
-    {_, PidB} = lists:nth(J, Individuals),
+    {_, PidA} = lists:nth(I, Individuals), % TODO: bad, bad nth
+    {_, PidB} = lists:nth(J, Individuals), % TODO: bad, bad nth
     PidA ! {repr, self()},
     PidB ! {repr, self()},
     crosser(Master, none, none);
 tournament_selector(Individuals, Master, C, Length, I, J) ->
     First = random:uniform(Length),
     Second = random:uniform(Length),
-    io:format("~p ~p~n", [First, Second]),
     MinI = if First < I ->
                    First;
               true ->
@@ -270,8 +304,8 @@ crosser(Master, RepA, none) ->
             crosser(Master, RepA, Repr)
     end;
 crosser(Master, RepA, RepB) ->
-    Children = crossover(RepA, RepB),
-    Master ! Children.
+    {ChildA, ChildB} = crossover(RepA, RepB),
+    Master ! {children, ChildA, ChildB}.
 
 create_tree([]) ->
     erlang:error(no_processes);
@@ -291,4 +325,55 @@ create_tree([H | T], [L, R | Rest]) ->
     create_tree(T, Rest).
 
 crossover(ChromosomeA, ChromosomeB) ->
-    {ChromosomeA, ChromosomeB}.
+    IndexTable = lists:sort(lists:flatten(ChromosomeA)),
+    IndexChromA = create_ichromosome(ChromosomeA, IndexTable),
+    IndexChromB = create_ichromosome(ChromosomeB, IndexTable),
+    SplitIndex = random:uniform(length(IndexChromA)),
+    {FirstA, SecondA} = lists:split(SplitIndex, IndexChromA),
+    {FirstB, SecondB} = lists:split(SplitIndex, IndexChromB),
+    FirstIndexChrom = from_ichrom(FirstA ++ SecondB, IndexTable),
+    SecondIndexChrom = from_ichrom(FirstB ++ SecondA, IndexTable),
+    ChildA = unflatten_by(FirstIndexChrom, ChromosomeA),
+    ChildB = unflatten_by(SecondIndexChrom, ChromosomeB),
+    {ChildA, ChildB}.
+
+create_ichromosome(Chromosome, IndexTable) ->
+    create_ichromosome(Chromosome, IndexTable, []).
+
+create_ichromosome([], _, Acc) ->
+    lists:reverse(Acc);
+create_ichromosome([[]|T], IndexTable, Acc) ->
+    create_ichromosome(T, IndexTable, Acc);
+create_ichromosome([[H|TC]|TR], IndexTable, Acc) ->
+    Index = index_of(H, IndexTable),
+    IndexTableChanged = lists:delete(H, IndexTable),
+    create_ichromosome([TC|TR], IndexTableChanged, [Index|Acc]).
+
+from_ichrom(IndexChromosome, IndexTable) ->
+    from_ichrom(IndexChromosome, IndexTable, []).
+
+from_ichrom([], _, Acc) ->
+    lists:reverse(Acc);
+from_ichrom([H|T], IndexTable, Acc) ->
+    Value = lists:nth(H, IndexTable),
+    IndexTableChanged = lists:delete(Value, IndexTable),
+    from_ichrom(T, IndexTableChanged, [Value|Acc]).
+
+index_of(Item, List) ->
+    index_of(Item, List, 1).
+
+index_of(_, [], _) ->
+    erlang:error(cannot_find_value);
+index_of(Item, [Item|_], I) ->
+    I;
+index_of(Item, [_|T], I) ->
+    index_of(Item, T, I+1).
+
+unflatten_by(FlatList, Chromosome) ->
+    unflatten_by(FlatList, Chromosome, []).
+
+unflatten_by([], _, Acc) ->
+    lists:reverse(Acc);
+unflatten_by(FlatList, [H|T], Acc) ->
+    {First, Second} = lists:split(length(H), FlatList),
+    unflatten_by(Second, T, [First|Acc]).
