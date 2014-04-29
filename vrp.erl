@@ -1,5 +1,5 @@
 -module(vrp).
--export([main/1, main/5, individual/4, tournament_selector/4]).
+-export([main/1, main/6, individual/4, tournament_selector/4]).
 %% -compile(export_all).
 
 -record(chromosome, {repr,
@@ -11,26 +11,29 @@
                      depot,
                      capacity,
                      overcapcoef,
-                     popcount}).
+                     popcount,
+                     mutateprob}).
 
-main([FilenameArg, CarNumArg, PopCountArg, OverCapCoefArg, IterationsArg]) ->
+main([FilenameArg, CarNumArg, PopCountArg, OverCapCoefArg, IterationsArg, MutateProbArg]) ->
     Filename = atom_to_list(FilenameArg),
     Cars = list_to_integer(atom_to_list(CarNumArg)),
     PopCount = list_to_integer(atom_to_list(PopCountArg)),
     OverCapCoef = list_to_integer(atom_to_list(OverCapCoefArg)),
     Iterations = list_to_integer(atom_to_list(IterationsArg)),
-    main(Filename, Cars, PopCount, OverCapCoef, Iterations),
+    MutateProb = list_to_integer(atom_to_list(MutateProbArg)),
+    main(Filename, Cars, PopCount, OverCapCoef, Iterations, MutateProb),
     init:stop();
 main(_) ->
-    io:format("ERROR: You must run this program with five arguments,~n"),
+    io:format("ERROR: You must run this program with six arguments,~n"),
     io:format("- first is the name of the file with VCRP task,~n"),
     io:format("- second is the number of cars to use,~n"),
     io:format("- third is the number of individuals in population,~n"),
     io:format("- fourth is coefficient of over-capacity penalty,~n"),
-    io:format("- fifth is number of iterations.~n"),
+    io:format("- fifth is number of iterations,~n"),
+    io:format("- sixth is probability of mutation.~n"),
     init:stop().
 
-main(Filename, Cars, PopCount, OverCapCoef, Iterations) ->
+main(Filename, Cars, PopCount, OverCapCoef, Iterations, MutateProb) ->
     random:seed(erlang:now()),
 
     {ok, Bin} = file:read_file(Filename),
@@ -40,7 +43,7 @@ main(Filename, Cars, PopCount, OverCapCoef, Iterations) ->
     DistanceMap = compute_distance_map(Nodes),
     VRP = #vrpProblem{nodes=Nodes, distancemap=DistanceMap,
                       depot=Depot, capacity=Capacity, overcapcoef=OverCapCoef,
-                      popcount=PopCount},
+                      popcount=PopCount, mutateprob=MutateProb},
     InitPopulation = create_init_population(PopCount, Cars, lists:delete(Depot, proplists:get_keys(Nodes))),
 
     register(main, self()),
@@ -57,12 +60,18 @@ main(Filename, Cars, PopCount, OverCapCoef, Iterations) ->
 
     [H|_] = Processes,
 
-    generations_iterate(H, Iterations, VRP),
+    {BestFit, BestPid} = generations_iterate(H, Iterations, VRP),
+
+    BestPid ! {repr, self()},
+
+    receive
+        BestSolution ->
+            io:format("Best: ~p, fitness: ~p~n", [BestSolution, BestFit])
+    end,
 
     [Pid ! die || Pid <- Processes],
     unregister(main),
-    %% {BestSolution, VRP}.
-    ok.
+    {BestSolution, VRP}.
 
 generations_iterate(H, Count, VRP) ->
     H ! {selection, self()},
@@ -74,13 +83,14 @@ generations_iterate(H, Count, VRP) ->
 
 generations_iterate(_, Total, _, Total, Acc) ->
     hd(Acc);
-generations_iterate(H, Total, VRP = #vrpProblem{popcount=PopCount}, Count, Acc) ->
+generations_iterate(H, Total, VRP = #vrpProblem{popcount=PopCount, mutateprob=MutateProb},
+                    Count, Acc) ->
     SelectorLength = round(PopCount/3),
 
-    [spawn(?MODULE, tournament_selector, [Acc, self(), 5, PopCount])
+    [spawn(?MODULE, tournament_selector, [Acc, self(), 15, PopCount])
      || _ <- lists:seq(1, SelectorLength)], % TODO: promenna misto "20"
 
-    Children = receive_children(SelectorLength),
+    Children = receive_children(SelectorLength, MutateProb),
 
     replace_worst(Acc, Children),
 
@@ -90,19 +100,24 @@ generations_iterate(H, Total, VRP = #vrpProblem{popcount=PopCount}, Count, Acc) 
             true
     end,
 
-    io:format("Avg fitness: ~p~n", [average_fitness(NewValues)]),
-    io:format("Best: ~p~n", [hd(NewValues)]),
+    {BestFit, _} = hd(NewValues),
+    io:format("~p. generation: Avg fitness: ~p, Best: ~p~n", [Count, round(average_fitness(NewValues)), BestFit]),
     generations_iterate(H, Total, VRP, Count+1, NewValues).
 
-receive_children(Count) ->
-    receive_children(Count, 0, []).
+receive_children(Count, MutateProb) ->
+    receive_children(Count, MutateProb, 0, []).
 
-receive_children(Total, Total, Acc) ->
+receive_children(Total, _, Total, Acc) ->
     Acc;
-receive_children(Total, Count, Acc) ->
+receive_children(Total, MutateProb, Count, Acc) ->
     receive
         {children, X, Y} ->
-            receive_children(Total, Count+1, [X, Y | Acc])
+            case random:uniform(10000)/100 =< MutateProb of
+                true ->
+                    receive_children(Total, MutateProb,  Count+1, [mutate(X), mutate(Y) | Acc]);
+                false ->
+                    receive_children(Total, MutateProb, Count+1, [X, Y | Acc])
+            end
     end.
 
 replace_worst([], []) ->
@@ -384,3 +399,43 @@ unflatten_by([], _, Acc) ->
 unflatten_by(FlatList, [H|T], Acc) ->
     {First, Second} = lists:split(length(H), FlatList),
     unflatten_by(Second, T, [First|Acc]).
+
+mutate(Chromosome) ->
+    I = random:uniform(length(Chromosome)),
+    J = random:uniform(length(Chromosome)),
+    if I == J ->
+            Splited = lists:split(I-1, Chromosome),
+            mutate(Chromosome, Splited);
+       true ->
+            As = lists:split(I-1, Chromosome),
+            B = lists:nth(J, Chromosome),
+            mutate(Chromosome, As, B, J)
+    end.
+
+mutate(Chromosome, {_, [N|_]}) when length(N) == 0 ->
+    mutate(Chromosome);
+mutate(_, {NPrev, [N|NPost]}) ->
+    I = random:uniform(length(N)),
+    J = random:uniform(length(N)),
+    NPrev ++ [swap(N, I, J) | NPost].
+
+mutate(Chromosome, {_, [A|_]}, B, _) when length(A) == 0; length(B) == 0 ->
+    mutate(Chromosome);
+mutate(_, {APrev, [A|APost]}, B, BIndex) ->
+    I = random:uniform(length(A)),
+    J = random:uniform(length(B)),
+    {N, M} = swap_inside(A, I, B, J),
+    LT = APrev ++ [N|APost],
+    {List3, [_|List4]} = lists:split(BIndex-1, LT),
+    List3 ++ [M|List4].
+
+swap(L, I, J) ->
+    {List1, [F|List2]} = lists:split(I-1, L),
+    LT = List1 ++ [lists:nth(J, L)|List2],
+    {List3, [_|List4]} = lists:split(J-1, LT),
+    List3 ++ [F|List4].
+
+swap_inside(N, I, M, J) ->
+    {NPrev, [NVal|NPost]} = lists:split(I-1, N),
+    {MPrev, [MVal|MPost]} = lists:split(J-1, M),
+    {NPrev ++ [MVal|NPost], MPrev ++ [NVal|MPost]}.
