@@ -1,7 +1,7 @@
 -module(vrp).
--export([main/0, main/1, main/7, individual/4, tournament_selector/4,
-        generations_iterate/4]).
-%% -compile(export_all).
+%%-export([main/0, main/1, main/7, individual/4, tournament_selector/4,
+%%        generations_iterate/4]).
+-compile(export_all).
 
 -record(chromosome, {repr,
                      fit,
@@ -418,13 +418,24 @@ unflatten_by(FlatList, [H|T], Acc) ->
 mutate(Chromosome) ->
     I = random:uniform(length(Chromosome)),
     J = random:uniform(length(Chromosome)),
-    if I == J ->
-            Splited = lists:split(I-1, Chromosome),
-            mutate(Chromosome, Splited);
-       true ->
-            As = lists:split(I-1, Chromosome),
-            B = lists:nth(J, Chromosome),
-            mutate(Chromosome, As, B, J)
+    case random:uniform(2) of
+        1 ->
+            if I == J ->
+                    Splited = lists:split(I-1, Chromosome),
+                    mutate(Chromosome, Splited);
+               true ->
+                    As = lists:split(I-1, Chromosome),
+                    B = lists:nth(J, Chromosome),
+                    mutate(Chromosome, As, B, J)
+            end;
+        2 ->
+            Length = length(lists:nth(I, Chromosome)),
+            if Length == 0 ->
+                    mutate(Chromosome);
+               true ->
+                    K = random:uniform(Length),
+                    mutate_give(Chromosome, I, J, K)
+            end
     end.
 
 mutate(Chromosome, {_, [N|_]}) when length(N) == 0 ->
@@ -454,3 +465,10 @@ swap_inside(N, I, M, J) ->
     {NPrev, [NVal|NPost]} = lists:split(I-1, N),
     {MPrev, [MVal|MPost]} = lists:split(J-1, M),
     {NPrev ++ [MVal|NPost], MPrev ++ [NVal|MPost]}.
+
+mutate_give(Chromosome, I, J, K) ->
+    {List1, [FL|List2]} = lists:split(I-1, Chromosome),
+    {ListIn1, [F|ListIn2]} = lists:split(K-1, FL),
+    LT = List1 ++ [(ListIn1++ListIn2)|List2],
+    {List3, [G|List4]} = lists:split(J-1, LT),
+    List3 ++ [[F|G]|List4].
