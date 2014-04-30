@@ -1,0 +1,1 @@
+erl -noshell -s vrp main A-n32-k5.vrp 5 500 10 2000 100
