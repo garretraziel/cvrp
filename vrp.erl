@@ -1,5 +1,5 @@
 -module(vrp).
--export([main/1, main/6, individual/4, tournament_selector/4]).
+-export([main/0, main/1, main/6, individual/4, tournament_selector/4]).
 %% -compile(export_all).
 
 -record(chromosome, {repr,
@@ -24,13 +24,16 @@ main([FilenameArg, CarNumArg, PopCountArg, OverCapCoefArg, IterationsArg, Mutate
     main(Filename, Cars, PopCount, OverCapCoef, Iterations, MutateProb),
     init:stop();
 main(_) ->
+    main().
+
+main() ->
     io:format("ERROR: You must run this program with six arguments,~n"),
     io:format("- first is the name of the file with VCRP task,~n"),
     io:format("- second is the number of cars to use,~n"),
     io:format("- third is the number of individuals in population,~n"),
     io:format("- fourth is coefficient of over-capacity penalty,~n"),
     io:format("- fifth is number of iterations,~n"),
-    io:format("- sixth is probability of mutation.~n"),
+    io:format("- sixth is probability of mutation, 1% .. 100%.~n"),
     init:stop().
 
 main(Filename, Cars, PopCount, OverCapCoef, Iterations, MutateProb) ->
@@ -87,7 +90,7 @@ generations_iterate(H, Total, VRP = #vrpProblem{popcount=PopCount, mutateprob=Mu
                     Count, Acc) ->
     SelectorLength = round(PopCount/3),
 
-    [spawn(?MODULE, tournament_selector, [Acc, self(), 15, PopCount])
+    [spawn(?MODULE, tournament_selector, [Acc, self(), 5, PopCount])
      || _ <- lists:seq(1, SelectorLength)], % TODO: promenna misto "20"
 
     Children = receive_children(SelectorLength, MutateProb),
@@ -112,7 +115,7 @@ receive_children(Total, _, Total, Acc) ->
 receive_children(Total, MutateProb, Count, Acc) ->
     receive
         {children, X, Y} ->
-            case random:uniform(10000)/100 =< MutateProb of
+            case random:uniform(100) =< MutateProb of
                 true ->
                     receive_children(Total, MutateProb,  Count+1, [mutate(X), mutate(Y) | Acc]);
                 false ->
@@ -205,7 +208,7 @@ create_init_population(0, _, _, List) ->
 create_init_population(Count, CarCount, Nodes, List) ->
     Shuffled = shuffle(Nodes),
     %% TODO: jak moc v pocatecni populaci priradit jednomu autu?
-    Segments = [random:uniform(round(2*length(Nodes)/CarCount)) || _ <- lists:seq(1, CarCount)],
+    Segments = [random:uniform(length(Nodes)) || _ <- lists:seq(1, CarCount)],
     Cutted = cut_list(Shuffled, Segments),
     create_init_population(Count-1, CarCount, Nodes, [Cutted|List]).
 
