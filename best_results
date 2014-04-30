@@ -1,1 +1,2 @@
-erl -noshell -s vrp main A-n32-k5.vrp 5 500 10 2000 100
+erl -noshell -s vrp main A-n32-k5.vrp 5 500 10 2000 100 (5?) // 803
+erl -noshell -s vrp main A-n37-k6.vrp 6 1000 10 1000 100 5 // 1095

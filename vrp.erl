@@ -1,5 +1,5 @@
 -module(vrp).
--export([main/0, main/1, main/6, individual/4, tournament_selector/4]).
+-export([main/0, main/1, main/7, individual/4, tournament_selector/4]).
 %% -compile(export_all).
 
 -record(chromosome, {repr,
@@ -12,31 +12,35 @@
                      capacity,
                      overcapcoef,
                      popcount,
-                     mutateprob}).
+                     mutateprob,
+                     tournament}).
 
-main([FilenameArg, CarNumArg, PopCountArg, OverCapCoefArg, IterationsArg, MutateProbArg]) ->
+main([FilenameArg, CarNumArg, PopCountArg, OverCapCoefArg,
+      IterationsArg, MutateProbArg, TournamentArg]) ->
     Filename = atom_to_list(FilenameArg),
     Cars = list_to_integer(atom_to_list(CarNumArg)),
     PopCount = list_to_integer(atom_to_list(PopCountArg)),
     OverCapCoef = list_to_integer(atom_to_list(OverCapCoefArg)),
     Iterations = list_to_integer(atom_to_list(IterationsArg)),
     MutateProb = list_to_integer(atom_to_list(MutateProbArg)),
-    main(Filename, Cars, PopCount, OverCapCoef, Iterations, MutateProb),
+    Tournament = list_to_integer(atom_to_list(TournamentArg)),
+    main(Filename, Cars, PopCount, OverCapCoef, Iterations, MutateProb, Tournament),
     init:stop();
 main(_) ->
     main().
 
 main() ->
-    io:format("ERROR: You must run this program with six arguments,~n"),
+    io:format("ERROR: You must run this program with seven arguments,~n"),
     io:format("- first is the name of the file with VCRP task,~n"),
     io:format("- second is the number of cars to use,~n"),
     io:format("- third is the number of individuals in population,~n"),
     io:format("- fourth is coefficient of over-capacity penalty,~n"),
     io:format("- fifth is number of iterations,~n"),
-    io:format("- sixth is probability of mutation, 1% .. 100%.~n"),
+    io:format("- sixth is probability of mutation, 1% .. 100%,~n"),
+    io:format("- seventh is number of rounds of tournament selection.~n"),
     init:stop().
 
-main(Filename, Cars, PopCount, OverCapCoef, Iterations, MutateProb) ->
+main(Filename, Cars, PopCount, OverCapCoef, Iterations, MutateProb, Tournament) ->
     random:seed(erlang:now()),
 
     {ok, Bin} = file:read_file(Filename),
@@ -46,7 +50,8 @@ main(Filename, Cars, PopCount, OverCapCoef, Iterations, MutateProb) ->
     DistanceMap = compute_distance_map(Nodes),
     VRP = #vrpProblem{nodes=Nodes, distancemap=DistanceMap,
                       depot=Depot, capacity=Capacity, overcapcoef=OverCapCoef,
-                      popcount=PopCount, mutateprob=MutateProb},
+                      popcount=PopCount, mutateprob=MutateProb,
+                      tournament=Tournament},
     InitPopulation = create_init_population(PopCount, Cars, lists:delete(Depot, proplists:get_keys(Nodes))),
 
     register(main, self()),
@@ -86,11 +91,13 @@ generations_iterate(H, Count, VRP) ->
 
 generations_iterate(_, Total, _, Total, Acc) ->
     hd(Acc);
-generations_iterate(H, Total, VRP = #vrpProblem{popcount=PopCount, mutateprob=MutateProb},
+generations_iterate(H, Total, VRP = #vrpProblem{popcount=PopCount,
+                                                mutateprob=MutateProb,
+                                                tournament=Tournament},
                     Count, Acc) ->
     SelectorLength = round(PopCount/3),
 
-    [spawn(?MODULE, tournament_selector, [Acc, self(), 5, PopCount])
+    [spawn(?MODULE, tournament_selector, [Acc, self(), Tournament, PopCount])
      || _ <- lists:seq(1, SelectorLength)], % TODO: promenna misto "20"
 
     Children = receive_children(SelectorLength, MutateProb),
