@@ -1,5 +1,6 @@
 -module(vrp).
--export([main/0, main/1, main/7, individual/4, tournament_selector/4]).
+-export([main/0, main/1, main/7, individual/4, tournament_selector/4,
+        generations_iterate/4]).
 %% -compile(export_all).
 
 -record(chromosome, {repr,
@@ -68,37 +69,41 @@ main(Filename, Cars, PopCount, OverCapCoef, Iterations, MutateProb, Tournament) 
 
     [H|_] = Processes,
 
-    {BestFit, BestPid} = generations_iterate(H, Iterations, VRP),
-
-    BestPid ! {repr, self()},
+    spawn(?MODULE, generations_iterate, [self(), H, Iterations, VRP]),
 
     receive
-        BestSolution ->
-            io:format("Best: ~p, fitness: ~p~n", [BestSolution, BestFit])
+        {soln, {BestFit, BestPid}} ->
+            BestPid ! {repr, self()},
+            receive
+                BestSolution ->
+                    io:format("Best: ~p, fitness: ~p~n", [BestSolution, BestFit])
+            end;
+        die ->
+            BestSolution = none
     end,
 
     [Pid ! die || Pid <- Processes],
     unregister(main),
     {BestSolution, VRP}.
 
-generations_iterate(H, Count, VRP) ->
+generations_iterate(Master, H, Count, VRP) ->
     H ! {selection, self()},
     receive
         {selected, _, Sorted} ->
             true
     end,
-    generations_iterate(H, Count, VRP, 0, Sorted).
+    generations_iterate(Master, H, Count, VRP, 0, Sorted).
 
-generations_iterate(_, Total, _, Total, Acc) ->
-    hd(Acc);
-generations_iterate(H, Total, VRP = #vrpProblem{popcount=PopCount,
-                                                mutateprob=MutateProb,
-                                                tournament=Tournament},
+generations_iterate(Master, _, Total, _, Total, Acc) ->
+    Master ! {soln, hd(Acc)};
+generations_iterate(Master, H, Total, VRP = #vrpProblem{popcount=PopCount,
+                                                        mutateprob=MutateProb,
+                                                        tournament=Tournament},
                     Count, Acc) ->
     SelectorLength = round(PopCount/3),
 
     [spawn(?MODULE, tournament_selector, [Acc, self(), Tournament, PopCount])
-     || _ <- lists:seq(1, SelectorLength)], % TODO: promenna misto "20"
+     || _ <- lists:seq(1, SelectorLength)],
 
     Children = receive_children(SelectorLength, MutateProb),
 
@@ -112,7 +117,7 @@ generations_iterate(H, Total, VRP = #vrpProblem{popcount=PopCount,
 
     {BestFit, _} = hd(NewValues),
     io:format("~p. generation: Avg fitness: ~p, Best: ~p~n", [Count, round(average_fitness(NewValues)), BestFit]),
-    generations_iterate(H, Total, VRP, Count+1, NewValues).
+    generations_iterate(Master, H, Total, VRP, Count+1, NewValues).
 
 receive_children(Count, MutateProb) ->
     receive_children(Count, MutateProb, 0, []).
