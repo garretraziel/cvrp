@@ -1,3 +1,32 @@
 erl -noshell -s vrp main A-n32-k5.vrp 5 500 10 2000 100 (5?) // 803
-erl -noshell -s vrp main A-n37-k6.vrp 6 1000 10 1000 100 5 // 1095
+erl -noshell -s vrp main A-n37-k6.vrp 6 1000 10 1000 100 5 // 999
 erl -noshell -s vrp main A-n32-k5.vrp 5 1000 10 1000 100 5 // 782
+erl -noshell -s vrp main A-n32-k5.vrp 5 50 10 2000 100 2 // 817
+erl -noshell -s vrp main A-n32-k5.vrp 5 50 100 2000 100 2 // 837
+
+- vypada to, ze vyssi koeficient prekroceni kapacity zpusobuje mensi "riskovani",
+takze se musi program spoustet vickrat, aby mel nejake dobre jedince uz v
+pocatecni populaci
+- vyssi koeficient prekroceni kapacity zpusobi caste uvaznuti v lokalnim minimu
+
+- mensi pocet jedincu konverguje pomaleji, ale rychlejsi se provadi... takze to vyjde tak
+nastejno, ale mozna muze uvaznout v lokalnim minimu snaz
+
+- uspech krizeni lze ukazat nastavenim mutacniho koeficientu na 0 a pocet
+tahu na 1. pak nic nemutuje a jedince vybira z populace nahodne, ale fitness stejne klesa
+
+- mutace je potreba, aby se populace nezahltila stejnymi jedinci
+-> pokud maji dva stejni jedinci potomka, vzniknou najednou 4 stejni potomci
+
+- pokud nastavim velky pocet hodu pro turnaj, jedna se vlastne o "greedy" reseni.
+uvazne v lokalnim minimu ihned po startu
+
+- k nejvetsim zmenam dochazi na zacatku, protoze je populace ruznoroda,
+ke konci se fitness snizuje pouze po jednotkach
+
+- pro velmi vysoky pocet turnaju reseni velice rychle zkonverguje, ale pak asi uvazne
+v lokalnim minimu
+
+zakazane
+--------
+- malo prvku a vysoky koeficient pokuty
