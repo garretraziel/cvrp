@@ -1,10 +1,7 @@
--module(vrp).
--export([main/0, main/1, main/7, individual/4, tournament_selector/4,
-         generations_iterate/4]).
-
--record(chromosome, {repr,
-                     fit,
-                     isFitActual}).
+-module(vrpserial).
+%%-export([main/0, main/1, main/7, individual/4, tournament_selector/4,
+%%        generations_iterate/4]).
+-compile(export_all).
 
 -record(vrpProblem, {nodes,
                      distancemap,
@@ -41,6 +38,8 @@ main() ->
     init:stop().
 
 main(Filename, Cars, PopCount, OverCapCoef, Iterations, MutateProb, Tournament) ->
+    statistics(runtime),
+    statistics(wall_clock),
     random:seed(erlang:now()),
 
     {ok, Bin} = file:read_file(Filename),
@@ -53,94 +52,49 @@ main(Filename, Cars, PopCount, OverCapCoef, Iterations, MutateProb, Tournament) 
                       popcount=PopCount, mutateprob=MutateProb,
                       tournament=Tournament},
     InitPopulation = create_init_population(PopCount, Cars, lists:delete(Depot, proplists:get_keys(Nodes))),
-
-    register(main, self()),
-
-    Processes = [spawn(?MODULE, individual,
-                       [{none, none, none},
-                        #chromosome{repr=I, isFitActual=false, fit=0},
-                        VRP,
-                        {none, none}])
-                 || I <- InitPopulation],
-    create_tree(Processes),
-
+    
     io:format("initial population created~n"),
 
-    [H|_] = Processes,
+    Population = [{fitness(X, VRP), X} || X <- InitPopulation],
 
-    spawn(?MODULE, generations_iterate, [self(), H, Iterations, VRP]),
+    {BestFit, BestSolution} = generations_iterate(Population, Iterations, VRP),
+    
+    io:format("Best: ~p, fitness: ~p~n", [BestSolution, BestFit]),
 
-    receive
-        {soln, {BestFit, BestPid}} ->
-            BestPid ! {repr, self()},
-            receive
-                BestSolution ->
-                    io:format("Best: ~p, fitness: ~p~n", [BestSolution, BestFit])
-            end;
-        die ->
-            BestSolution = none
-    end,
+    {_, Time1} = statistics(runtime),
+    {_, Time2} = statistics(wall_clock),
 
-    [Pid ! die || Pid <- Processes],
-    unregister(main),
+    U1 = Time1/1000,
+    U2 = Time2/1000,
+    io:format("Code time ~p (~p) seconds~n", [U1, U2]),
+
     {BestSolution, VRP}.
 
-generations_iterate(Master, H, Count, VRP) ->
-    H ! {selection, self()},
-    receive
-        {selected, _, Sorted} ->
-            true
-    end,
-    generations_iterate(Master, H, Count, VRP, 0, Sorted).
+generations_iterate(Population, Count, VRP) ->
+    Sorted = lists:keysort(1, Population),
+    generations_iterate(Sorted, Count, VRP, 0).
 
-generations_iterate(Master, _, Total, _, Total, Acc) ->
-    Master ! {soln, hd(Acc)};
-generations_iterate(Master, H, Total, VRP = #vrpProblem{popcount=PopCount,
-                                                        mutateprob=MutateProb,
-                                                        tournament=Tournament},
-                    Count, Acc) ->
+generations_iterate([H|_], Total, _, Total) ->
+    H;
+generations_iterate(Population, Total, VRP = #vrpProblem{popcount=PopCount,
+                                                         mutateprob=MutateProb,
+                                                         tournament=Tournament},
+                    Count) ->
     SelectorLength = round(PopCount/3),
 
-    [spawn(?MODULE, tournament_selector, [Acc, self(), Tournament, PopCount])
-     || _ <- lists:seq(1, SelectorLength)],
+    NewIndividuals = [tournament_selector(Population, Tournament, PopCount, MutateProb) || _ <- lists:seq(1, SelectorLength)],
 
-    Children = receive_children(SelectorLength, MutateProb),
+    Flattened = lists:foldl(fun ({X,Y}, Acc) -> [X,Y|Acc] end, [], NewIndividuals),
+    Children = [{fitness(X, VRP), X} || X <- Flattened],
 
-    replace_worst(Acc, Children),
-
-    H ! {selection, self()},
-    receive
-        {selected, _, NewValues} ->
-            true
-    end,
+    {Elite, _} = lists:split(length(Population)-length(Children), Population),
+    Replaced = lists:append(Elite, Children),
+    
+    NewValues = lists:keysort(1, Replaced),
 
     {BestFit, _} = hd(NewValues),
     io:format("~p. generation: Avg fitness: ~p, Best: ~p~n", [Count, round(average_fitness(NewValues)), BestFit]),
-    generations_iterate(Master, H, Total, VRP, Count+1, NewValues).
-
-receive_children(Count, MutateProb) ->
-    receive_children(Count, MutateProb, 0, []).
-
-receive_children(Total, _, Total, Acc) ->
-    Acc;
-receive_children(Total, MutateProb, Count, Acc) ->
-    receive
-        {children, X, Y} ->
-            case random:uniform(100) =< MutateProb of
-                true ->
-                    receive_children(Total, MutateProb,  Count+1, [mutate(X), mutate(Y) | Acc]);
-                false ->
-                    receive_children(Total, MutateProb, Count+1, [X, Y | Acc])
-            end
-    end.
-
-replace_worst([], []) ->
-    ok;
-replace_worst(Values = [_|T], Children) when length(Values) > length(Children) ->
-    replace_worst(T, Children);
-replace_worst([{_, Pid}|TV], [HC|TC]) ->
-    Pid ! {reprChange, HC},
-    replace_worst(TV, TC).
+    generations_iterate(NewValues, Total, VRP, Count+1).
 
 parse_bin(Bin) ->
     [string:strip(X) || X <- string:tokens(binary_to_list(Bin), "\r\n")].
@@ -240,81 +194,22 @@ cut_list(List, [H|T], Acc) ->
     {First, Others} = lists:split(H, List),
     cut_list(Others, T, [First|Acc]).
 
-individual(Pids, C = #chromosome{repr=X, isFitActual=false}, P, _) ->
-    Fit = fitness(X, P),
-    individual(Pids, C#chromosome{isFitActual=true, fit=Fit}, P, {none, none});
-individual(Pids = {Left, Right, Root}, C = #chromosome{fit=Fit}, P, S = {RightSelected, LeftSelected}) ->
-    receive
-        {left, NewLeft} ->
-            individual({NewLeft, Right, Root}, C, P, S);
-        {right, NewRight} ->
-            individual({Left, NewRight, Root}, C, P, S);
-        {selection, NewRoot} ->
-            case {Left, Right} of
-                {none, none} ->
-                    NewRoot ! {selected, self(), [{Fit, self()}]},
-                    individual({Left, Right, NewRoot}, C, P, S);
-                {none, RightValue} ->
-                    RightValue ! {selection, self()},
-                    individual({Left, Right, NewRoot}, C, P, S);
-                {LeftValue, none} ->
-                    LeftValue ! {selection, self()},
-                    individual({Left, Right, NewRoot}, C, P, S);
-                {LeftValue, RightValue} ->
-                    RightValue ! {selection, self()},
-                    LeftValue ! {selection, self()},
-                    individual({Left, Right, NewRoot}, C, P, S)
-            end;
-        {selected, Left, SortedList} ->
-            if
-                Right == none ->
-                    Sorted = lists:keymerge(1, SortedList, [{Fit, self()}]),
-                    Root ! {selected, self(), Sorted},
-                    individual(Pids, C, P, {none, none});
-                RightSelected /= none ->
-                    First = lists:keymerge(1, RightSelected, [{Fit, self()}]),
-                    Sorted = lists:keymerge(1, SortedList, First),
-                    Root ! {selected, self(), Sorted},
-                    individual(Pids, C, P, {none, none});
-                true ->
-                    individual(Pids, C, P, {RightSelected, SortedList})
-            end;
-        {selected, Right, SortedList} ->
-            if
-                Left == none ->
-                    Sorted = lists:keymerge(1, SortedList, [{Fit, self()}]),
-                    Root ! {selected, self(), Sorted},
-                    individual(Pids, C, P, {none, none});
-                LeftSelected /= none ->
-                    First = lists:keymerge(1, LeftSelected, [{Fit, self()}]),
-                    Sorted = lists:keymerge(1, SortedList, First),
-                    Root ! {selected, self(), Sorted},
-                    individual(Pids, C, P, {none, none});
-                true ->
-                    individual(Pids, C, P, {SortedList, LeftSelected})
-            end;
-        {repr, Pid} ->
-            Pid ! C#chromosome.repr,
-            individual(Pids, C, P, S);
-        {reprChange, NewRepr} ->
-            individual(Pids, C#chromosome{repr=NewRepr, isFitActual=false}, P, S);
-        die ->
-            true
-    end.
+tournament_selector(Individuals, TournamentCount, Length, MProb) ->
+    tournament_selector(Individuals, TournamentCount, Length, MProb, none, none).
 
-tournament_selector(Individuals, Master, TournamentCount, Length) ->
-    random:seed(erlang:now()),
-    tournament_selector(Individuals, Master, TournamentCount, Length, none, none).
-
-tournament_selector(_, _, 0, _, none, none) ->
+tournament_selector(_, 0, _, _, none, none) ->
     erlang:error(bad_tournament_count);
-tournament_selector(Individuals, Master, 0, _, I, J) ->
-    {_, PidA} = lists:nth(I, Individuals), % TODO: bad, bad nth
-    {_, PidB} = lists:nth(J, Individuals), % TODO: bad, bad nth
-    PidA ! {repr, self()},
-    PidB ! {repr, self()},
-    crosser(Master, none, none);
-tournament_selector(Individuals, Master, C, Length, I, J) ->
+tournament_selector(Individuals, 0, _, MProb, I, J) ->
+    {_, RepA} = lists:nth(I, Individuals), % TODO: bad, bad nth
+    {_, RepB} = lists:nth(J, Individuals), % TODO: bad, bad nth
+    {Ca, Cb} = crosser(RepA, RepB),
+    case random:uniform(100) =< MProb of
+        true ->
+            {mutate(Ca), mutate(Cb)};
+        false ->
+            {Ca, Cb}
+    end;
+tournament_selector(Individuals, C, Length, MProb, I, J) ->
     First = random:uniform(Length),
     Second = random:uniform(Length),
     MinI = if First < I ->
@@ -327,38 +222,10 @@ tournament_selector(Individuals, Master, C, Length, I, J) ->
               true ->
                    J
            end,
-    tournament_selector(Individuals, Master, C-1, Length, MinI, MinJ).
+    tournament_selector(Individuals, C-1, Length, MProb, MinI, MinJ).
 
-crosser(Master, none, none) ->
-    receive
-        Repr ->
-            crosser(Master, Repr, none)
-    end;
-crosser(Master, RepA, none) ->
-    receive
-        Repr ->
-            crosser(Master, RepA, Repr)
-    end;
-crosser(Master, RepA, RepB) ->
-    {ChildA, ChildB} = crossover(RepA, RepB),
-    Master ! {children, ChildA, ChildB}.
-
-create_tree([]) ->
-    erlang:error(no_processes);
-create_tree(Processes=[_|Rest]) ->
-    create_tree(Processes, Rest).
-
-create_tree([], _) ->
-    ok;
-create_tree(_, []) ->
-    ok;
-create_tree([H|_], [L]) ->
-    H ! {left, L},
-    ok;
-create_tree([H | T], [L, R | Rest]) ->
-    H ! {left, L},
-    H ! {right, R},
-    create_tree(T, Rest).
+crosser(RepA, RepB) ->
+    crossover(RepA, RepB).
 
 crossover(ChromosomeA, ChromosomeB) ->
     IndexTable = lists:sort(lists:flatten(ChromosomeA)),

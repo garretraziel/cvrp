@@ -31,3 +31,5 @@ v lokalnim minimu
 zakazane
 --------
 - malo prvku a vysoky koeficient pokuty
+
+- seriove reseni erl -noshell -s vrp main A-n32-k5.vrp 5 1000 10 1000 100 5 trvalo 219.5 sekund, paralelni 129.9 sekund
