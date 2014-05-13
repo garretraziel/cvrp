@@ -182,7 +182,7 @@ fitness(_, _) ->
     erlang:error(bad_chromosome).
 
 fitness([], _, _, _, _, CapCoef, Cost, OverCapacity) when OverCapacity > 0 ->
-    Cost+CapCoef*OverCapacity; % TODO: koeficient prekroceni kapacity
+    Cost+CapCoef*OverCapacity;
 fitness([], _, _, _, _, _, Cost, _) ->
     Cost;
 fitness([H|T], Nodes, DistanceMap, Depot, Capacity, CapCoef, Cost, OverCapacity) ->
@@ -197,7 +197,7 @@ fitness_dist([H|T], Nodes, DistanceMap) ->
 
 fitness_dist(H, [], Nodes, _, Cost, CapUsed) ->
     {_, {_, _, Cap}} = lists:keyfind(H, 1, Nodes),
-    {round(Cost), CapUsed+Cap}; % TODO: asi neni potreba byt float() presny
+    {round(Cost), CapUsed+Cap};
 fitness_dist(Last, [H|T], Nodes, DistanceMap, Cost, CapUsed) ->
     {_, {_, _, Cap}} = lists:keyfind(Last, 1, Nodes),
     {_, Distance} = lists:keyfind({Last, H}, 1, DistanceMap),
@@ -218,7 +218,6 @@ create_init_population(0, _, _, List) ->
     List;
 create_init_population(Count, CarCount, Nodes, List) ->
     Shuffled = shuffle(Nodes),
-    %% TODO: jak moc v pocatecni populaci priradit jednomu autu?
     Segments = [random:uniform(length(Nodes)) || _ <- lists:seq(1, CarCount)],
     Cutted = cut_list(Shuffled, Segments),
     create_init_population(Count-1, CarCount, Nodes, [Cutted|List]).
@@ -309,8 +308,8 @@ tournament_selector(Individuals, Master, TournamentCount, Length) ->
 tournament_selector(_, _, 0, _, none, none) ->
     erlang:error(bad_tournament_count);
 tournament_selector(Individuals, Master, 0, _, I, J) ->
-    {_, PidA} = lists:nth(I, Individuals), % TODO: bad, bad nth
-    {_, PidB} = lists:nth(J, Individuals), % TODO: bad, bad nth
+    {_, PidA} = lists:nth(I, Individuals),
+    {_, PidB} = lists:nth(J, Individuals),
     PidA ! {repr, self()},
     PidB ! {repr, self()},
     crosser(Master, none, none);
