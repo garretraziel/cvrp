@@ -157,6 +157,12 @@ ways = [[31,17,2,13],
 #       [15,7,37,30,25],
 #       [28,33,36,26]] # n37, fitness: 995
 
+ways = [[15,25,28],
+       [8,22,32,20,18,14,27],
+       [21,6,26,11,16,10,23,30],
+       [31,17,2,13],
+       [7,4,3,24,29,5,12,9,19]] # n32, mutace 1, 2 tahy, prekroceni kapacity fitness: 784
+
 for i, car in enumerate(ways):
     color = (random.randrange(255), random.randrange(255), random.randrange(255))
     prev = 1
