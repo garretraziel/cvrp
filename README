@@ -1,0 +1,35 @@
+vrp.elr
+=======
+
+Program pro reseni CVRP pomoci genetickych algoritmu
+Jan Sedlak, xsedla85, 2014
+
+Preklad
+-------
+Pro preklad a spusteni je potreba Erlang. Preklad probiha
+prikazem ``make'' nebo pomoci ``erlc vrp.erl vrpserial.erl''.
+
+Spusteni
+--------
+Uloha se spousti jako:
+
+erl -noshell -s vrp main uloha vozidla jedinci penalty iteraci mutace tournament, kde
+
+    - uloha je nazev souboru s CVRP ulohou ve formatu TSPLIB
+    - vozidla je pocet pouzitych vozidel
+    - jedinci znaci velikost populace
+    - penalty je penalizace za prekroceni kapacity
+    - iteraci je pocet iteraci genetickeho algoritmu
+    - mutace je procento pravdepodobnosti mutace
+    - tournament znaci pocet hodu pri vyberu jedincu pro turnaj
+
+napriklad:
+
+erl -noshell -s vrp main A-n32-k5.vrp 5 1000 10 500 100 5
+
+spusti ulohu CVRP ze souboru A-n32-k5.vrp s peti vozdily, 1000 jedinci v populaci,
+penalizaci za prekroceni kapacity 10, 500 iteraci, 100% pravdepodobnosti mutace a
+5 hody pri vyberu jedincu pri krizeni.
+
+Pro otestovani neparalelniho reseni slouzi program vrpserial. Pouziti je stejne,
+pouze pri spusteni se pouziva ``erl -noshell -s vrpserial''.
