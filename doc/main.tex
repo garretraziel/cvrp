@@ -83,10 +83,10 @@ Jakmile jsou vybráni jedinci jako rodiče, přichází na řadu jejich kříže
 \item[jednobodové křížení] znamená, že je v~chromozomu zvolen jeden náhodný bod a potomek získá první část genetické informace od jednoho rodiče a zbytek od druhého,
 \item[vícebodové křížení] funguje v~principu stejně jako jednobodové, pouze na dalším náhodně zvoleném bodě bude potomek opět brát informaci z~prv\-ní\-ho rodiče,
 \item[uniformní křížení] znamená, že se každý prvek chromozomu přenese se stejnou pravděpodobností od jednoho nebo druhého rodiče,
-\item[aritmetické křížení] je vhodné, pokud jsou prvky chromozomu reálná čísla. Výsledný potomek pak může brát hodnoty obou rodičů zaráz, vždy s~ur\-či\-tou vahou.
+\item[aritmetické křížení] je vhodné, pokud jsou prvky chromozomu reálná čísla. Výsledný potomek pak může brát hodnoty obou rodičů zároveň, vždy s~ur\-či\-tou vahou.
 \end{description}
 
-VRP patří mezi problémy, jehož nejjednodušší reprezentace v~chromozomu je permutace míst. Pokud bychom však použili nějaký z~výše uvedených způsobů křížení, často by vznikaly neplatné reprezentace. Například zkřížením chromozomu [A, B, C, D] a [D, C, B, A] pro nějaký problém může jednobodovým křížením vzniknout chromozom [A, B, B, A], který však v~permutační úloze není platný. Je proto nutné použít křížení, které je pro permutační optimalizační problémy uzpůsobeno~\cite{sfc}. Jedním z~těchto křížení je jednobodové křížení s~použitím indexové tabulky. Chromozom je neprve převeden do \emph{indexového chromozomu}, ten je zkřížen jednobodovým křížením a výsledek je převeden zpět.
+VRP patří mezi problémy, jehož nejjednodušší reprezentace v~chromozomu je permutace míst. Pokud bychom však použili nějaký z~výše uvedených způsobů křížení, často by vznikaly neplatné reprezentace. Například zkřížením chromozomu [A, B, C, D] a [D, C, B, A] pro nějaký problém může jednobodovým křížením vzniknout chromozom [A, B, B, A], který však v~permutační úloze není platný. Je proto nutné použít křížení, které je pro permutační optimalizační problémy uzpůsobeno~\cite{sfc}. Jedním z~těchto křížení je jednobodové křížení s~použitím indexové tabulky. Chromozom je nejprve převeden do \emph{indexového chromozomu}, ten je zkřížen jednobodovým křížením a výsledek je převeden zpět.
 
 Křížení více jedinců však není v~genetických algoritmech nutné, například pokud charakter úlohy a reprezentace chromozomu zapříčiní, že potomek není po prokřížení podobný ani jednomu svému rodiči. Při řešení VRP je možné křížení více jedinců zanedbat a nové jedince vytvářet pouze na základě jednoho stávajícího, pomocí mutace či různých heuristik~\cite{masum}.
 
@@ -102,7 +102,7 @@ Pro chování jednotlivých fází genetického algoritmu je důležité zvolit 
 
 Protože chromozom musí nést i informaci o~rozdělení tras mezi jednotlivá vozidla, finální podoba chromozomu je vektor vektorů, kde jednotlivé vnořené vektory můžou být různě dlouhé a reprezentují $R_i$ cesty jednotlivých vozidel.
 
-Fitness funkce je v~kontextu VRP předem jasná - jedná se o~součet uražené vzdálenosti. Dle~\cite{cneo} je vhodné jedince s~překročenou kapacitou z~populace ne\-vy\-řa\-zo\-vat, pouze tento fakt zohledit v~hodnotící funkci. Finální podoba fitness funkce je tedy:
+Fitness funkce je v~kontextu VRP předem jasná - jedná se o~součet uražené vzdálenosti. Dle~\cite{cneo} je vhodné jedince s~překročenou kapacitou z~populace ne\-vy\-řa\-zo\-vat, pouze tento fakt zohlednit v~hodnotící funkci. Finální podoba fitness funkce je tedy:
 
 \[f(x) = soucet\_vzdalenosti(x) + \lambda*pres\_kapacitu(x)\]
 
@@ -121,13 +121,13 @@ Pro měření zrychlení paralelního řešení byla naprogramována také verze
 
 \section{Experimentální ověření optimalizátoru}
 
-Experimenty chceme ověřit, že navrhnutý a implementovaný optimalizátor do\-ká\-že pomocí genetického algoritmu řešit zadanou optimalizační úlohu CVRP, zkoumat vlastnosti systému v~závislosti na použitých proměnných jako je velikost populace, míra mutace a velikost skupiny vybraných jedinců pro křížení turnajem a dále dokázat, že paralelní řešení zrychlí běh úlohy.
+Experimenty chceme ověřit, že navržený a implementovaný optimalizátor do\-ká\-že pomocí genetického algoritmu řešit zadanou optimalizační úlohu CVRP, zkoumat vlastnosti systému v~závislosti na použitých proměnných jako je velikost populace, míra mutace a velikost skupiny vybraných jedinců pro křížení turnajem a dále dokázat, že paralelní řešení zrychlí běh úlohy.
 
 \subsection{Vliv proměnných na kvalitu řešení a rychlost konvergence}
 
 Pro experimentální ověření bylo provedeno 80 experimentů, čili spuštění optimalizátoru pro různé vstupní proměnné. Je však důležité si uvědomit, že genetický algoritmus je založen na prvku náhody. Proto je vhodné spíše sledovat trend vývoje kvality řešení, než absolutně spoléhat na získané hodnoty. Všechny grafy v~této sekci byly upraveny tak, aby osa $x$ zobrazovala část od začátku po ustálení a osa $y$ zobrazovala rozsah od hodnoty pod optimálním řešením po hodnotu, ve které se jednotlivé řešení začnou rozcházet.
 
-První zadání je úloha A-n32-k5.vrp z~datasetu Augeral a kol. Úloha obsahuje 32 měst, u~každého známe jeho souřadnice a požadavek. Cena přechodu mezi dvěma městy je určena euklidovskou vzdáleností těchto dvou měst. Optimální hodnota ceny průchodu všemi městy je 784.
+První zadání je úloha A-n32-k5.vrp z~datasetu Augeral a kol. Úloha obsahuje 32 měst, u~každého známe jeho souřadnice a požadavek. Cena přechodu mezi dvěma městy je určena eukleidovskou vzdáleností těchto dvou měst. Optimální hodnota ceny průchodu všemi městy je 784.
 
 Nejprve prozkoumejme závislost velikosti populace na rychlosti konvergence a kvalitě výsledného řešení. Měření probíhalo pro míru mutace 75 \% a pro 5 jedinců na jeden turnaj (důvod volby těchto konstant nám bude jasný z~ná\-sle\-du\-jí\-cích grafů). Výsledný graf je vidět na obrázku~\ref{fig:populace}. Jak je z~grafu zřejmé, pro zadané konstanty je lepší vyšší počet jedinců. Jakmile počet jedinců přesáhne určitou hranici, která je nutná pro dostatečnou rozmanitost, neexistuje horní hranice ideálního počtu jedinců. Jak vyplývá z~grafů~\ref{fig:padesat} a~\ref{fig:tisic}, může být počet padesáti jedinců v~populaci velice často nedostatečný. Musíme ale také myslet na to, že větší počet jedinců znamená delší výpočet, jak bude zřejmé z~dalších experimentů. Menší počet jedinců má také větší tendence uváznout v~lokálním minimu.
 
@@ -203,11 +203,11 @@ Pro ověření kvality paralelní řešení nás zajímá doba výpočtu řešen
 Bylo provedeno 80 experimentů s~úlohou A-n32 a 18 experimentů s~úlohou A-n37 při různých parametrech genetického algoritmu. Pro přesnější výsledky by bylo vhodné každý z~těchto experimentů provést opakovaně a sledovat například i průměrnou kvalitu jednoho nastavení parametrů.
 
 \section{Závěr a zhodnocení výsledků}
-V~této práci byl představen popis a implementace optimalizačního programu pro úlohu CVRP pomocí genetických algoritmů a to v~paralelním prostředí. Experimentálně bylo zjištěno, že v~navrhnutém řešení problému vede vysoká míra mutace k~lepším řešením. To je zřejmě způsobeno vybraným způsobem mutace, ta zde může do určité míry nahrazovat křížení.
+V~této práci byl představen popis a implementace optimalizačního programu pro úlohu CVRP pomocí genetických algoritmů a to v~paralelním prostředí. Experimentálně bylo zjištěno, že v~navrženém řešení problému vede vysoká míra mutace k~lepším řešením. To je zřejmě způsobeno vybraným způsobem mutace, ta zde může do určité míry nahrazovat křížení.
 
 Dále bylo zjištěno, že pro rychlejší konvergenci a kvalitnější výsledné řešení je vhodný větší počet jedinců v~populaci. Zajistí se tak větší variabilita testovaných řešení, avšak se vzrůstajícím počtem jedinců v~populaci roste doba výpočtu genetického algoritmu.
 
-Experimentálně bylo ověřeno, že navrhnuté paralelní řešení na stroji s~více jádry procesoru zrychlí výpočet genetického algoritmu zhruba o~třetinu. To může být způsobeno tím, že ačkoliv velká část výpočtu probíhá paralelně, tak v~každé generaci musí řídící proces získat výsledky všech fitness funkcí a následně je předat ostatním. Větší míra zrychlení by zřejmě byla možná pokud by v~programu nenastalo, že ostatní procesy čekají na dokončení výpočtu jednoho jediného procesoru.
+Experimentálně bylo ověřeno, že navržené paralelní řešení na stroji s~více jádry procesoru zrychlí výpočet genetického algoritmu zhruba o~třetinu. To může být způsobeno tím, že ačkoliv velká část výpočtu probíhá paralelně, tak v~každé generaci musí řídící proces získat výsledky všech fitness funkcí a následně je předat ostatním. Větší míra zrychlení by zřejmě byla možná pokud by v~programu nenastalo, že ostatní procesy čekají na dokončení výpočtu jednoho jediného procesoru.
 
 \begin{thebibliography}{9}
 \bibitem{dantzig}
