@@ -9,6 +9,10 @@ Preklad
 Pro preklad a spusteni je potreba Erlang. Preklad probiha
 prikazem ``make'' nebo pomoci ``erlc vrp.erl vrpserial.erl''.
 
+Na stroji merlin neni bohuzel erlang dostupny. Na eve erlang dostupny je,
+jsou na nej vsak uvaleny uzivatelske limity, tudiz lze na eve spustit pouze
+neparalelni reseni vrpserial.
+
 Spusteni
 --------
 Uloha se spousti jako:
