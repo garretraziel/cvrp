@@ -95,7 +95,7 @@ Jasným trendem několika posledních let je zvyšující se počet procesorový
 
 Řešením může být použití takového programovacího jazyka, který je na implementaci paralelního řešení navrhnut a uzpůsoben. Jedním z~těchto jazyků je funkcionální jazyk Erlang. Erlang obsahuje konstrukt pro spuštění procesu a jeho komunikaci s~okolím. Nejedná se však o~procesy v~pravém slova smyslu - jde o~tzv.\ \emph{green thread}, čili vlákna, které si běhové prostředí řídí samo. Díky tomu je běhové prostředí Erlangu schopno velice rychle spustit a řídit větší množství procesů~\cite{armstrong}, řádově statisíce až miliony.
 
-VM Erlangu spustí na každém procesoru plánovač běhu procesů, tudíž správ\-ně napsaná aplikace v~Erlangu je schopna často využít plný výkon vícejádrového počítače.
+VM Erlangu spustí na každém procesoru plánovač běhu procesů, tudíž správ\-ně napsaná aplikace v~Erlangu je schopna často využít plný výkon procesoru s více jádry.
 
 \section{Koncepce optimalizačního programu pro ú\-lo\-hu CVRP}
 Pro chování jednotlivých fází genetického algoritmu je důležité zvolit vhodnou reprezentaci chromozomu. Jelikož CVRP je permutační optimalizační úloha, chromozom může být reprezentován jako permutace seznamu měst. Každá po\-lož\-ka označuje ná\-sle\-du\-jící město, do kterého se má vozidlo vydat. Centrála je na začátek a konec cesty přidána automaticky.
@@ -129,7 +129,7 @@ Pro experimentální ověření bylo provedeno 80 experimentů, čili spuštěn�
 
 První zadání je úloha A-n32-k5.vrp z~datasetu Augeral a kol. Úloha obsahuje 32 měst, u~každého známe jeho souřadnice a požadavek. Cena přechodu mezi dvěma městy je určena eukleidovskou vzdáleností těchto dvou měst. Optimální hodnota ceny průchodu všemi městy je 784.
 
-Nejprve prozkoumejme závislost velikosti populace na rychlosti konvergence a kvalitě výsledného řešení. Měření probíhalo pro míru mutace 75 \% a pro 5 jedinců na jeden turnaj (důvod volby těchto konstant nám bude jasný z~ná\-sle\-du\-jí\-cích grafů). Výsledný graf je vidět na obrázku~\ref{fig:populace}. Jak je z~grafu zřejmé, pro zadané konstanty je lepší vyšší počet jedinců. Jakmile počet jedinců přesáhne určitou hranici, která je nutná pro dostatečnou rozmanitost, neexistuje horní hranice ideálního počtu jedinců. Jak vyplývá z~grafů~\ref{fig:padesat} a~\ref{fig:tisic}, může být počet padesáti jedinců v~populaci velice často nedostatečný. Musíme ale také myslet na to, že větší počet jedinců znamená delší výpočet, jak bude zřejmé z~dalších experimentů. Menší počet jedinců má také větší tendence uváznout v~lokálním minimu.
+Nejprve prozkoumejme závislost velikosti populace na rychlosti konvergence a kvalitě výsledného řešení. Měření probíhalo pro míru mutace 100 \% a pro 5 jedinců na jeden turnaj (důvod volby těchto konstant nám bude jasný z~ná\-sle\-du\-jí\-cích grafů). Výsledný graf je vidět na obrázku~\ref{fig:populace}. Jak je z~grafu zřejmé, pro zadané konstanty je lepší vyšší počet jedinců. Jakmile počet jedinců přesáhne určitou hranici, která je nutná pro dostatečnou rozmanitost, neexistuje horní hranice ideálního počtu jedinců. Jak vyplývá z~grafů~\ref{fig:padesat} a~\ref{fig:tisic}, může být počet padesáti jedinců v~populaci velice často nedostatečný. Musíme ale také myslet na to, že větší počet jedinců znamená delší dobu výpočtu, jak bude zřejmé z~dalších experimentů. Menší počet jedinců má také větší tendence uváznout v~lokálním minimu.
 
 \begin{figure}
 \centering
@@ -165,7 +165,7 @@ Zajímavý je vliv počtu jedinců v~jedné skupině při turnaji. Jak je vidět
 \caption{Závislost počtu jedinců při výběru turnajem na kvalitě výsledného řešení u~problému A-n32 pro 32 měst a 5 vozidel\label{fig:turnaj}}
 \end{figure}
 
-Na obrázku~\ref{fig:best} jsou zobrazena nejlepší dosažená řešení. Je důležité určit vhodný koeficient pokuty za překročení kapacity. Pokud je tento koeficient příliš malý, algoritmus nedbá na překročení kapacity a výsledkem je neplatné řešení. Pokud je tento koeficient příliš velký, algoritmus méně `riskuje', což má za následek brzké zahození řešení, které je blízko optimálnímu, ale má překročenou kapacitu, čili vede k~uváznutí v~lokálním minimu. Všechny tyto experimenty byly testovány v~koeficientem 10.
+Na obrázku~\ref{fig:best} jsou zobrazena nejlepší dosažená řešení. Je důležité určit vhodný koeficient pokuty za překročení kapacity. Pokud je tento koeficient příliš malý, algoritmus nedbá na překročení kapacity a výsledkem je neplatné řešení. Pokud je tento koeficient příliš velký, algoritmus méně `riskuje', což má za následek brzké zahození řešení, které je blízko optimálnímu, ale má překročenou kapacitu, čili vede k~uváznutí v~lokálním minimu. Všechny tyto experimenty byly testovány s~koeficientem 10.
 
 \begin{figure}
 \centering

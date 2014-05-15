@@ -1,4 +1,4 @@
-vrp.elr
+vrp.erl
 =======
 
 Program pro reseni CVRP pomoci genetickych algoritmu
